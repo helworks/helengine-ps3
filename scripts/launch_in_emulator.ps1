@@ -96,10 +96,13 @@ New-Item -ItemType Directory -Path $runRoot | Out-Null
 $stdoutPath = Join-Path $runRoot 'emulator-stdout.log'
 $stderrPath = Join-Path $runRoot 'emulator-stderr.log'
 # A per-run game configuration (RPCS3 --config) makes the emulator exit when the PS3
-# process finishes and keeps the emulation window windowed. It applies to this CLI boot
-# only; the emulator's own config.yml is never touched.
+# process finishes, keeps the emulation window windowed, and mirrors rendered color
+# buffers into guest memory so the host's diagnostic pixel probe can read them. It
+# applies to this CLI boot only; the emulator's own config.yml is never touched.
 $runConfigPath = Join-Path $runRoot 'rpcs3-run-config.yml'
 Set-Content -LiteralPath $runConfigPath -Encoding Ascii -Value @(
+    'Video:',
+    '  Write Color Buffers: true',
     'Miscellaneous:',
     '  Exit RPCS3 when process finishes: true',
     '  Start games in fullscreen mode: false',
