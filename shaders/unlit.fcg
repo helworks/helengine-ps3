@@ -1,0 +1,4 @@
+// Unlit fragment program: writes the interpolated vertex color unchanged.
+float4 main(float4 tint : COLOR0) : COLOR {
+    return tint;
+}

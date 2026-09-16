@@ -5,6 +5,8 @@
 #include "platform/ps3/Ps3RunOptions.hpp"
 
 namespace helengine::ps3 {
+    class Ps3Video;
+
     /// Native PS3 boot host: registers the system exit callback, owns the video and
     /// renderer lifetimes in order, drives the frame loop with a monotonic clock, and
     /// funnels every failure into one ordered cleanup path (drain, renderer shutdown,
@@ -38,5 +40,10 @@ namespace helengine::ps3 {
 
         /// System event callback: records an exit request and does nothing else.
         static void HandleSystemEvent(u64 status, u64 parameter, void* userData);
+
+        /// Logs a diagnostic readback of six fixed screen points from the displayed frame
+        /// (center, left, right, top, bottom, corner) so face colors and background can be
+        /// checked from the log; it never influences rendering.
+        static void LogFrameProbe(const Ps3Video& video, const char* label, float pose);
     };
 }

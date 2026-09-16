@@ -236,6 +236,12 @@ namespace helengine::ps3 {
             std::printf("PS3_VIDEO_ERROR stage=Present reason=not-ready\n");
             return false;
         }
+        // Flush the frame's commands before queuing the flip. gcmSetFlip appends the flip
+        // command and advances the PUT pointer by that command's size on the assumption that
+        // PUT already equals the write position; queuing the flip with unflushed commands
+        // behind it lets the GPU run past the write position into stale ring data (observed
+        // in RPCS3 as an RSX FIFO desync on the previous lap's constant floats).
+        rsxFlushBuffer(ContextValue);
         gcmResetFlipStatus();
         const s32 flipResult = gcmSetFlip(ContextValue, static_cast<u8>(RenderTargetIndex));
         if (flipResult != 0) {
@@ -355,7 +361,30 @@ namespace helengine::ps3 {
         return PresentedFrames;
     }
 
+    unsigned Ps3Video::CommandWriteOffset() const {
+        if (ContextValue == nullptr) {
+            return 0;
+        }
+        u32 offset = 0;
+        if (rsxAddressToOffset(ContextValue->current, &offset) != 0) {
+            return 0xFFFFFFFFu;
+        }
+        return offset;
+    }
+
     bool Ps3Video::HasDrained() const {
         return Drained;
+    }
+
+    bool Ps3Video::ReadDisplayedPixel(unsigned x, unsigned y, unsigned* colorOut) const {
+        if (!Ready || PresentedFrames == 0 || FlipPending || colorOut == nullptr || x >= WidthValue || y >= HeightValue) {
+            return false;
+        }
+        // After Present() rotated the index, the displayed buffer is the other one.
+        const u32 displayedIndex = RenderTargetIndex ^ 1u;
+        const volatile u8* row = static_cast<const volatile u8*>(ColorBuffers[displayedIndex]) + static_cast<u32>(y) * ColorPitch;
+        const volatile u32* pixel = reinterpret_cast<const volatile u32*>(row + static_cast<u32>(x) * BytesPerPixel);
+        *colorOut = (*pixel) & 0x00FFFFFFu;
+        return true;
     }
 }

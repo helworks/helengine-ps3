@@ -65,8 +65,19 @@ namespace helengine::ps3 {
         /// Returns how many frames Present() has queued.
         unsigned PresentedFrameCount() const;
 
+        /// Returns the current command write position as an RSX I/O offset (diagnostic;
+        /// shows where the ring buffer wraps).
+        unsigned CommandWriteOffset() const;
+
         /// Returns true when Drain() has completed successfully.
         bool HasDrained() const;
+
+        /// Diagnostic readback of one pixel (X8R8G8B8 as 0x00RRGGBB) from the color buffer
+        /// most recently confirmed on screen. Valid only after BeginFrame() has waited for
+        /// the previous flip, so the read surface is complete and not being rendered to.
+        /// Emulators may not mirror GPU output into readable memory unless configured to;
+        /// a stale value is therefore a diagnostic limitation, not proof of a missing draw.
+        bool ReadDisplayedPixel(unsigned x, unsigned y, unsigned* colorOut) const;
 
     private:
         /// Size of the main-memory I/O buffer handed to rsxInit (multiple of 1 MiB).
