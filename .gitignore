@@ -1,0 +1,15 @@
+# Canonical build outputs live outside the worktree under C:\dev\helworks\builds\helengine-ps3.
+# These patterns only guard against generated products accidentally landing in the repository.
+/build/
+/out/
+*.elf
+*.self
+*.map
+*.o
+*.d
+*.vpo
+*.fpo
+*.log
+build-manifest.json
+tests/native/*.exe
+tests/native/*.out

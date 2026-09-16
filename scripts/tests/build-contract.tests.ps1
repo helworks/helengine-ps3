@@ -1,0 +1,237 @@
+<#
+.SYNOPSIS
+    Contract tests for scripts/build.ps1 and scripts/launch_in_emulator.ps1.
+
+.DESCRIPTION
+    Exercises the build wrapper and launcher against test-owned fixtures under a fresh
+    external script-tests-<id> directory. A fake `docker` command (a .cmd shim ahead of
+    the real one on PATH for this process only) simulates the SDK container so that
+    nonzero builds, zero-byte outputs and successful builds can be checked without the
+    real toolchain; a fake emulator script records whether it was launched and with which
+    arguments. There is no production skip-verification flag: the fakes are injected
+    purely through PATH and explicit path parameters.
+
+    Requires a prepared toolchain-lock.json (ResolvedImage present) because build.ps1
+    reads the locked image identity and the Cg mount contract.
+
+    Command contract:
+        powershell -NoProfile -File scripts/tests/build-contract.tests.ps1
+#>
+[CmdletBinding()]
+param(
+    [string]$ExternalRoot = 'C:\dev\helworks\builds\helengine-ps3'
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$buildScript = Join-Path $repoRoot 'scripts\build.ps1'
+$launcherScript = Join-Path $repoRoot 'scripts\launch_in_emulator.ps1'
+$lockPath = Join-Path $repoRoot 'toolchain-lock.json'
+$testId = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+$testsRoot = Join-Path ([IO.Path]::GetFullPath($ExternalRoot)) "script-tests-$testId"
+$outputRoot = Join-Path $testsRoot 'out put'
+$fakeDockerDirectory = Join-Path $testsRoot 'fake-docker'
+$fakeEmulatorDirectory = Join-Path $testsRoot 'fake rpcs3'
+$fakeEmulator = Join-Path $fakeEmulatorDirectory 'rpcs3 fake.cmd'
+$fakeLaunchMarker = Join-Path $fakeEmulatorDirectory 'launched.txt'
+$failures = [Collections.Generic.List[string]]::new()
+$passes = [Collections.Generic.List[string]]::new()
+
+foreach ($required in @($buildScript, $launcherScript, $lockPath)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing: $required" }
+}
+$lock = Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not ($lock.ResolvedImage.PSObject.Properties.Name -contains 'ImageId')) {
+    throw 'toolchain-lock.json has no ResolvedImage; run scripts/prepare_toolchain.ps1 before the contract tests.'
+}
+
+New-Item -ItemType Directory -Path $outputRoot, $fakeDockerDirectory, $fakeEmulatorDirectory | Out-Null
+
+# --- Fake docker shim ------------------------------------------------------------------
+Set-Content -LiteralPath (Join-Path $fakeDockerDirectory 'docker.cmd') -Encoding Ascii -Value @(
+    '@echo off',
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0fake-docker.ps1" %*',
+    'exit /b %ERRORLEVEL%'
+)
+Set-Content -LiteralPath (Join-Path $fakeDockerDirectory 'fake-docker.ps1') -Encoding UTF8 -Value @'
+$arguments = @($args | ForEach-Object { [string]$_ })
+$scenario = $env:HELENGINE_PS3_TEST_SCENARIO
+if ($arguments.Count -ge 2 -and $arguments[0] -eq 'image' -and $arguments[1] -eq 'inspect') {
+    Write-Output $arguments[2]
+    exit 0
+}
+if ($arguments.Count -ge 1 -and $arguments[0] -eq 'run') {
+    if ($arguments -contains '-h') {
+        Write-Output 'ELF Header:'
+        Write-Output '  Class:                             ELF64'
+        Write-Output '  Data:                              2''s complement, big endian'
+        Write-Output '  Machine:                           PowerPC64'
+        exit 0
+    }
+    $outSource = $null
+    foreach ($argument in $arguments) {
+        if ($argument -match '^type=bind,source=(.+),target=/out$') { $outSource = $Matches[1] }
+    }
+    if ($null -eq $outSource) { Write-Error 'fake docker: no /out mount'; exit 9 }
+    Add-Content -LiteralPath (Join-Path $outSource 'fake-docker-args.txt') -Value ($arguments -join "`n")
+    switch ($scenario) {
+        'fail' {
+            Write-Output 'fake docker: simulated compiler error'
+            exit 3
+        }
+        'zero-elf' {
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'helengine_ps3.elf'), [byte[]]@())
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'helengine_ps3.self'), [byte[]]@(1,2,3))
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'helengine_ps3.map'), [byte[]]@(4,5,6))
+            exit 0
+        }
+        'success' {
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'helengine_ps3.elf'), [byte[]]@(0x7f,0x45,0x4c,0x46,1,2,3,4))
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'helengine_ps3.self'), [byte[]]@(0x53,0x43,0x45,0,9,9,9))
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'helengine_ps3.map'), [Text.Encoding]::ASCII.GetBytes('fake map'))
+            New-Item -ItemType Directory -Path (Join-Path $outSource 'shaders') -Force | Out-Null
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'shaders\unlit.vpo'), [byte[]]@(7,7,7))
+            [IO.File]::WriteAllBytes((Join-Path $outSource 'shaders\unlit.fpo'), [byte[]]@(8,8,8))
+            Write-Output 'fake docker: build ok'
+            exit 0
+        }
+        default {
+            Write-Error "fake docker: unknown scenario '$scenario'"
+            exit 8
+        }
+    }
+}
+Write-Error "fake docker: unsupported invocation: $($arguments -join ' ')"
+exit 7
+'@
+
+# --- Fake emulator -----------------------------------------------------------------------
+Set-Content -LiteralPath $fakeEmulator -Encoding Ascii -Value @(
+    '@echo off',
+    'echo %* > "%~dp0launched.txt"',
+    'exit /b 0'
+)
+
+$originalPath = $env:PATH
+$env:PATH = "$fakeDockerDirectory;$originalPath"
+
+function Assert-Rejected {
+    param([string]$Name, [scriptblock]$Action)
+    $rejected = $false
+    $message = ''
+    try {
+        & $Action | Out-Null
+    } catch {
+        $rejected = $true
+        $message = [string]$_.Exception.Message
+    }
+    if (-not $rejected) {
+        $failures.Add("$Name was accepted.")
+        return
+    }
+    if (Test-Path -LiteralPath $fakeLaunchMarker) {
+        $failures.Add("$Name : emulator launched before validation.")
+        Remove-Item -LiteralPath $fakeLaunchMarker -Force
+        return
+    }
+    $passes.Add("$Name rejected: $message")
+}
+
+function Assert-True {
+    param([string]$Name, [bool]$Condition, [string]$Detail = '')
+    if ($Condition) { $passes.Add($Name) } else { $failures.Add("$Name failed. $Detail") }
+}
+
+try {
+    # Existing BuildId is rejected before any build starts.
+    $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
+    New-Item -ItemType Directory -Path (Join-Path $outputRoot 'existing-01') | Out-Null
+    Assert-Rejected 'Existing BuildId' { & $buildScript -BuildId 'existing-01' -Mode Clear -OutputRoot $outputRoot }
+    Assert-True 'Existing BuildId left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'existing-01\build-manifest.json')))
+
+    # Nonzero build exit produces no manifest.
+    $env:HELENGINE_PS3_TEST_SCENARIO = 'fail'
+    Assert-Rejected 'Nonzero build' { & $buildScript -BuildId 'fail-01' -Mode Clear -OutputRoot $outputRoot }
+    Assert-True 'Nonzero build left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'fail-01\build-manifest.json')))
+    Assert-True 'Nonzero build kept its log' ((Test-Path -LiteralPath (Join-Path $outputRoot 'fail-01\build.log')) -and ((Get-Content -LiteralPath (Join-Path $outputRoot 'fail-01\build.log') -Raw) -match 'simulated compiler error'))
+
+    # Zero-byte output is rejected even though the container exited zero.
+    $env:HELENGINE_PS3_TEST_SCENARIO = 'zero-elf'
+    Assert-Rejected 'Zero-byte ELF' { & $buildScript -BuildId 'zero-01' -Mode Clear -OutputRoot $outputRoot }
+    Assert-True 'Zero-byte ELF left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'zero-01\build-manifest.json')))
+
+    # Successful build in a path with spaces writes a complete manifest.
+    $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
+    & $buildScript -BuildId 'spaces-01' -Mode Cube -FixedPose -RunSeconds 30 -FailurePoint AfterRenderer -OutputRoot $outputRoot | Out-Null
+    $successRoot = Join-Path $outputRoot 'spaces-01'
+    $manifestPath = Join-Path $successRoot 'build-manifest.json'
+    Assert-True 'Success manifest exists' (Test-Path -LiteralPath $manifestPath)
+    Assert-True 'Temporary manifest was renamed' (-not (Test-Path -LiteralPath (Join-Path $successRoot 'build-manifest.json.tmp')))
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True 'Manifest records mode settings' ($manifest.Mode -eq 'Cube' -and $manifest.FixedPose -eq $true -and $manifest.RunSeconds -eq 30 -and $manifest.FailurePoint -eq 'AfterRenderer')
+    Assert-True 'Manifest records lock hash' ($manifest.ToolchainLockSha256 -eq (Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash.ToLowerInvariant())
+    Assert-True 'Manifest records shader artifacts' (@($manifest.Artifacts | Where-Object { $_.Path -eq 'shaders/unlit.vpo' }).Count -eq 1)
+    $dockerArgsText = Get-Content -LiteralPath (Join-Path $successRoot 'fake-docker-args.txt') -Raw
+    Assert-True 'Build passed explicit definitions' ($dockerArgsText -match 'HELENGINE_PS3_FIXED_POSE=1' -and $dockerArgsText -match 'HELENGINE_PS3_RUN_SECONDS=30' -and $dockerArgsText -match 'HELENGINE_PS3_FAILURE_POINT=2' -and $dockerArgsText -match 'HELENGINE_PS3_CLEAR_ONLY=0')
+    Assert-True 'Build disabled networking' ($dockerArgsText -match '--network\nnone')
+    Assert-True 'Build mounted source read-only' ($dockerArgsText -match 'target=/src,readonly')
+    Assert-True 'Build mounted Cg read-only' ($dockerArgsText -match 'target=/opt/cg,readonly')
+
+    $artifactPath = Join-Path $successRoot 'helengine_ps3.self'
+
+    # Launcher negatives: none may start the emulator.
+    Assert-Rejected 'Missing artifact' { & $launcherScript -ArtifactPath (Join-Path $successRoot 'missing.self') -RpcS3Path $fakeEmulator -OutputRoot $outputRoot }
+    Assert-Rejected 'Wrong artifact name' { & $launcherScript -ArtifactPath (Join-Path $successRoot 'helengine_ps3.elf') -RpcS3Path $fakeEmulator -OutputRoot $outputRoot }
+    Assert-Rejected 'Artifact outside build root' { & $launcherScript -ArtifactPath $fakeEmulator -RpcS3Path $fakeEmulator -OutputRoot $outputRoot }
+    Assert-Rejected 'Missing emulator' { & $launcherScript -ArtifactPath $artifactPath -RpcS3Path (Join-Path $fakeEmulatorDirectory 'absent.exe') -OutputRoot $outputRoot }
+
+    $noManifestRoot = Join-Path $outputRoot 'nomanifest-01'
+    Copy-Item -LiteralPath $successRoot -Destination $noManifestRoot -Recurse
+    Remove-Item -LiteralPath (Join-Path $noManifestRoot 'build-manifest.json')
+    Assert-Rejected 'Missing manifest' { & $launcherScript -ArtifactPath (Join-Path $noManifestRoot 'helengine_ps3.self') -RpcS3Path $fakeEmulator -OutputRoot $outputRoot }
+
+    $renamedRoot = Join-Path $outputRoot 'renamed-01'
+    Copy-Item -LiteralPath $successRoot -Destination $renamedRoot -Recurse
+    Assert-Rejected 'Manifest BuildId mismatch' { & $launcherScript -ArtifactPath (Join-Path $renamedRoot 'helengine_ps3.self') -RpcS3Path $fakeEmulator -OutputRoot $outputRoot }
+
+    $tamperedRoot = Join-Path $outputRoot 'tamper-01'
+    Copy-Item -LiteralPath $successRoot -Destination $tamperedRoot -Recurse
+    $tamperedManifest = Get-Content -LiteralPath (Join-Path $tamperedRoot 'build-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $tamperedManifest.BuildId = 'tamper-01'
+    [IO.File]::WriteAllText((Join-Path $tamperedRoot 'build-manifest.json'), ($tamperedManifest | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllBytes((Join-Path $tamperedRoot 'helengine_ps3.self'), [byte[]]@(0x53,0x43,0x45,0,9,9,8))
+    Assert-Rejected 'Wrong artifact hash' { & $launcherScript -ArtifactPath (Join-Path $tamperedRoot 'helengine_ps3.self') -RpcS3Path $fakeEmulator -OutputRoot $outputRoot }
+
+    $staleRoot = Join-Path $outputRoot 'stale-01'
+    Copy-Item -LiteralPath $successRoot -Destination $staleRoot -Recurse
+    $staleManifest = Get-Content -LiteralPath (Join-Path $staleRoot 'build-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $staleManifest.BuildId = 'stale-01'
+    $staleManifest.ToolchainLockSha256 = ('0' * 64)
+    [IO.File]::WriteAllText((Join-Path $staleRoot 'build-manifest.json'), ($staleManifest | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+    Assert-Rejected 'Stale toolchain lock' { & $launcherScript -ArtifactPath (Join-Path $staleRoot 'helengine_ps3.self') -RpcS3Path $fakeEmulator -OutputRoot $outputRoot }
+
+    # Launcher positive: valid artifact in a path with spaces launches the emulator with a quoted path.
+    & $launcherScript -ArtifactPath $artifactPath -RpcS3Path $fakeEmulator -OutputRoot $outputRoot | Out-Null
+    Assert-True 'Valid artifact launched emulator' (Test-Path -LiteralPath $fakeLaunchMarker)
+    if (Test-Path -LiteralPath $fakeLaunchMarker) {
+        $markerText = (Get-Content -LiteralPath $fakeLaunchMarker -Raw).Trim()
+        Assert-True 'Launcher quoted the artifact path' ($markerText -match '--headless' -and $markerText.Contains('"' + $artifactPath + '"')) "Marker: $markerText"
+        Remove-Item -LiteralPath $fakeLaunchMarker -Force
+    }
+    $runDirectories = @(Get-ChildItem -LiteralPath (Join-Path $successRoot 'emulator-runs') -Directory)
+    Assert-True 'Launcher recorded a run directory' ($runDirectories.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $runDirectories[0].FullName 'emulator-command.txt')))
+}
+finally {
+    $env:PATH = $originalPath
+    Remove-Item Env:HELENGINE_PS3_TEST_SCENARIO -ErrorAction SilentlyContinue
+}
+
+Write-Output "Script contract tests under $testsRoot"
+foreach ($pass in $passes) { Write-Output "PASS $pass" }
+foreach ($failure in $failures) { Write-Output "FAIL $failure" }
+Write-Output "$($passes.Count) passed, $($failures.Count) failed."
+if ($failures.Count -gt 0) {
+    throw "$($failures.Count) script contract test(s) failed."
+}

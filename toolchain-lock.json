@@ -1,0 +1,85 @@
+{
+    "SchemaVersion":  1,
+    "Inputs":  {
+                   "BaseImage":  "debian:12-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+                   "AptSnapshot":  "20260901T000000Z",
+                   "Ps3ToolchainRepository":  "https://github.com/ps3dev/ps3toolchain.git",
+                   "Ps3ToolchainCommit":  "e13aa539c07abe86cdbcd095dc1340492dbca213",
+                   "Ps3ToolchainSteps":  [
+                                             "001-binutils-PPU",
+                                             "002-gcc-newlib-PPU",
+                                             "004-symlinks-PPU"
+                                         ],
+                   "Psl1ghtRepository":  "https://github.com/ps3dev/PSL1GHT.git",
+                   "Psl1ghtCommit":  "f649a08fd536a9e27c08c7db2d93a2d7ee4c3bbe",
+                   "Psl1ghtTargets":  [
+                                          "install-ctrl",
+                                          "ppu",
+                                          "ppu install",
+                                          "tools",
+                                          "tools install"
+                                      ],
+                   "SourceArchives":  [
+                                          {
+                                              "Name":  "binutils-2.22.tar.bz2",
+                                              "Sha256":  "6c7af8ed1c8cf9b4b9d6e6fe09a3e1d3d479fe63984ba8b9b26bf356b6313ca9",
+                                              "Url":  "https://sourceware.org/pub/binutils/releases/binutils-2.22.tar.bz2"
+                                          },
+                                          {
+                                              "Name":  "gcc-13.2.0.tar.xz",
+                                              "Sha256":  "e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da",
+                                              "Url":  "https://sourceware.org/pub/gcc/releases/gcc-13.2.0/gcc-13.2.0.tar.xz"
+                                          },
+                                          {
+                                              "Name":  "newlib-1.20.0.tar.gz",
+                                              "Sha256":  "c644b2847244278c57bec2ddda69d8fab5a7c767f3b9af69aa7aa3da823ff692",
+                                              "Url":  "https://sourceware.org/pub/newlib/newlib-1.20.0.tar.gz"
+                                          }
+                                      ],
+                   "SourceArchiveVerification":  "sha256 table in ps3toolchain/archives/archives.txt at the pinned commit; GCC in-tree gmp/mpfr/mpc/isl are fetched and sha512-verified by the pinned release\u0027s contrib/download_prerequisites",
+                   "DockerfileSha256":  "cc9ddfd9775d0902d82b99c56b32ade540b058c442b804047ffb315b18188386",
+                   "DockerIgnoreSha256":  "1e454e511eb8653414d82caa81e96fe7a7864f8d1d393869816034dd2bfb5ecb"
+               },
+    "ShaderToolkit":  {
+                          "Name":  "NVIDIA Cg Toolkit 3.1 (April 2012, Linux x86_64)",
+                          "Archive":  "Cg-3.1_April2012_x86_64.tgz",
+                          "ArchiveSha256":  "e8ff01e6cc38d1b3fd56a083f5860737dbd2f319a39037528fb1a74a89ae9878",
+                          "Url":  "https://developer.download.nvidia.com/cg/Cg_3.1/Cg-3.1_April2012_x86_64.tgz",
+                          "License":  "NVIDIA License For Customer Use of NVIDIA Software (usr/local/Cg/docs/license.txt in the archive). Proprietary; kept out of image layers and mounted read-only at build time.",
+                          "ExternalRoot":  "C:\\dev\\helworks\\builds\\helengine-ps3\\dependencies\\cg",
+                          "MountSource":  "C:\\dev\\helworks\\builds\\helengine-ps3\\dependencies\\cg\\usr",
+                          "MountTarget":  "/opt/cg",
+                          "LibraryPath":  "lib64/libCg.so",
+                          "LibCgSha256":  "01c8bbbd3c373cb5f337ab0fd7a252b9d01212d35ffc1e2ea2ea8de9d1e557d3"
+                      },
+    "ResolvedImage":  {
+                          "Tag":  "helengine-ps3-sdk:f193c21732b3fe791820feac5c9b7c86628595ea7775f257391347ff085636ce",
+                          "ImageId":  "sha256:55c5d118f37bd5a5fa73bba8d225583e6a5a0a1fb2f08ed4cb25bf05faf35a4d",
+                          "InputsHash":  "f193c21732b3fe791820feac5c9b7c86628595ea7775f257391347ff085636ce",
+                          "PreparedAtUtc":  "20260916-004230",
+                          "PrepareLog":  "C:\\dev\\helworks\\builds\\helengine-ps3\\toolchain\\prepare-20260916-004230.log",
+                          "CompilerC":  "ppu-gcc (GCC) 13.2.0",
+                          "CompilerCxx":  "ppu-g++ (GCC) 13.2.0",
+                          "CompilerTarget":  "powerpc64-ps3-elf",
+                          "Binutils":  "GNU ld (GNU Binutils) 2.22",
+                          "GccPrerequisites":  "gmp=\u0027gmp-6.2.1.tar.bz2\u0027 mpfr=\u0027mpfr-4.1.0.tar.bz2\u0027 mpc=\u0027mpc-1.2.1.tar.gz\u0027 isl=\u0027isl-0.24.tar.bz2\u0027 ",
+                          "GccPrerequisiteVerification":  "8 sha512 references in contrib/download_prerequisites",
+                          "NewlibPatchSha256":  "8b2d1addb0091ca2c58ae62ec189ca6e1720735732318c8c3be410a70e2aea2e",
+                          "GccPatchSha256":  "13ac4a23f3330e03ba5267d662eacf38c4a91f51ba0eaef7583fd0fb53f7f995",
+                          "BinutilsPatchSha256":  "4f3114a8cef16e05e7d8df1b3a37595e03e4ef670dd269a7f8a624143b5c88a8",
+                          "MachDep":  "-mhard-float -fmodulo-sched -ffunction-sections -fdata-sections",
+                          "CpuFlag":  "-mcpu=cell",
+                          "ReadelfPath":  "/opt/ps3dev/ppu/bin/ppu-readelf",
+                          "CgcompPath":  "/opt/ps3dev/bin/cgcomp",
+                          "MakeVersion":  "GNU Make 4.3",
+                          "SpuToolchain":  "not built (deferred with SPU work)",
+                          "RuntimeAptPackagesSha256":  "160efe68a74eaa7ba1db9860298a77e0502427f89a08f07889506e857ab210ad",
+                          "BuilderAptPackagesSha256":  "f56ebc324a2a366c2841e5c8241da95aa250f65c804c80c16b4c984941dad252",
+                          "Endian":  "powerpc64-ps3-elf big endian",
+                          "Architecture":  "PowerPC64 (Cell PPU)",
+                          "ProbeDirectory":  "C:\\dev\\helworks\\builds\\helengine-ps3\\toolchain\\probe-20260916-004230",
+                          "ProbeVpoSha256":  "92853ff5e14ce1f70942eb1ee521a6d8858c136dc9bf11077e59b46b9472c711",
+                          "ProbeFpoSha256":  "6ba4a0d6d6e475b1835def8bf5fe5daedd40d1989bf1473624f2f85a7958639c",
+                          "ProbeElfSha256":  "abfe83fa6083cb22e9bed814316931be8b6a76c7fad7dd65161cf86f917f69da"
+                      }
+}

@@ -1,0 +1,5 @@
+# The Docker context is the docker/ directory only. Nothing from the workspace is copied
+# into the image; every build input is fetched from the pinned revisions named in
+# toolchain-lock.json and passed through build arguments.
+*
+!Dockerfile
