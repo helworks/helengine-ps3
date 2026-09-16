@@ -65,11 +65,14 @@ What it does:
 2. Computes the SHA-256 of the canonical (sorted-key, compact) JSON of `Inputs`. That hash
    names the local tag `helengine-ps3-sdk:<inputs-hash>`; it never includes the resulting
    image ID, so the tag is not circular.
-3. Builds `docker/Dockerfile` (context = `docker/` only) with every pin passed as a build
-   argument. The builder stage runs the pinned ps3toolchain PPU steps (binutils 2.22,
-   gcc 13.2.0 + newlib 1.20.0, symlinks) and builds the PSL1GHT PPU libraries, sprx stubs
-   and host tools (`cgcomp`, `sprxlinker`, `make_self`, `fself`, `bin2s`, …). The runtime
-   stage keeps only `/opt/ps3dev` plus the shared libraries those tools need.
+3. Builds `docker/Dockerfile` (context = `docker/` only, with `--provenance=false` so cached
+   rebuilds keep the same image ID) with every pin passed as a build argument. The builder
+   stage runs the pinned ps3toolchain PPU steps (binutils 2.22, gcc 13.2.0 + newlib 1.20.0,
+   symlinks), applies the repository patches under `docker/patches/` to the pinned PSL1GHT
+   commit (each recorded by hash in `Inputs.Psl1ghtPatches`) and builds the PSL1GHT PPU
+   libraries, sprx stubs and host tools (`cgcomp`, `sprxlinker`, `make_self`, `fself`,
+   `bin2s`, …). The runtime stage keeps only `/opt/ps3dev` plus the shared libraries those
+   tools need.
 4. Verifies the compiler, readelf, SDK libraries, rules and tools inside the image and
    reads `/opt/ps3dev/helengine/toolchain-record.txt`.
 5. Compiles a probe vertex/fragment pair through the pinned `ppu_rules` (with the Cg
@@ -91,8 +94,10 @@ powershell -NoProfile -File scripts/build.ps1 -BuildId <id> [-Mode Clear|Cube] [
   the build directory read-write at `/out` (working directory) and the Cg tree read-only
   at `/opt/cg`. No host SDK or Docker socket is mounted.
 - Mode, pose, duration and failure point become explicit compile definitions
-  (`HELENGINE_PS3_CLEAR_ONLY`, `HELENGINE_PS3_FIXED_POSE`, `HELENGINE_PS3_RUN_SECONDS`,
-  `HELENGINE_PS3_FAILURE_POINT`); PS3 process arguments are not used.
+  (`HELENGINE_PS3_CLEAR_ONLY`, `HELENGINE_PS3_FIXED_POSE`, `HELENGINE_PS3_FIXED_POSE_RADIANS`,
+  `HELENGINE_PS3_RUN_SECONDS`, `HELENGINE_PS3_FAILURE_POINT`); PS3 process arguments are not
+  used. `-FixedPoseRadians` (default 0.6, the documented pose) is a diagnostic that only
+  applies with `-FixedPose`.
 - `Makefile` compiles `src/**.cpp` with `-std=c++17 -Wall -Wextra -Werror -mcpu=cell` plus
   the SDK `MACHDEP` flags, converts `shaders/*.vcg|*.fcg` with `cgcomp`, embeds the
   binaries with `bin2s`, links with the SDK C++ driver and writes a link map, then makes
@@ -121,13 +126,20 @@ The launcher validates, before starting anything, that the artifact lives under 
 external build root, that the directory's manifest names it as `LaunchArtifact` with a
 matching `BuildId`, that its SHA-256 matches, and that the manifest's lock hash matches
 the current `toolchain-lock.json`. The emulator path comes from `-RpcS3Path` or
-`HELENGINE_PS3_RPCS3_PATH`. Background runs use `--headless` in a hidden window;
-`-Visible` uses `--no-gui` and shows the emulation window. Each run is recorded under
-`<build>\emulator-runs\<utc>\` (command, stdout/stderr, copies of `RPCS3.log` and
-`TTY.log`). The launcher never edits the emulator's configuration.
+`HELENGINE_PS3_RPCS3_PATH`. Background runs use `--headless` in a hidden window, which
+forces RPCS3's Null renderer (logs only, nothing is drawn); `-Visible` uses `--no-gui`
+with the real renderer and shows the emulation window. Each run gets a per-run game
+config passed with `--config` (exit when the process finishes, windowed, color-buffer
+write-back for the host pixel probe) and is recorded under `<build>\emulator-runs\<utc>\`
+(command, stdout/stderr, copies of `RPCS3.log` and `TTY.log` from the emulator's `log\`
+directory). The launcher never edits the emulator's own `config.yml`.
 
-RPCS3 installation state and the verified launch command are recorded in
-`docs/Validation.md`.
+RPCS3 setup (once): extract the pinned Windows build under `C:\dev\helworks\emus\` and
+install the official system software with `rpcs3.exe --headless --installfw <PS3UPDAT.PUP>`.
+To let a window close deliver the system exit request instead of a confirmation dialog,
+set `confirmationBoxExitGame=false` under `[main_window]` in that install's
+`GuiConfigs\CurrentSettings.ini`. Versions, hashes and the verified command line are
+recorded in `docs/Validation.md`.
 
 ## 4. Host-side checks
 
