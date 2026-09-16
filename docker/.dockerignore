@@ -3,3 +3,5 @@
 # toolchain-lock.json and passed through build arguments.
 *
 !Dockerfile
+!patches
+!patches/*.patch

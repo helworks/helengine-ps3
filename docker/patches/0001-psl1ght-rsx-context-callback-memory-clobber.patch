@@ -1,0 +1,32 @@
+From: Helengine PS3 handler <helengine-ps3@helworks.local>
+Subject: [PATCH] librsx: declare a memory clobber on the context callback asm
+
+rsxContextCallback invokes the command-buffer wrap callback through inline
+assembly whose clobber list omits "memory". Because the wrapper is defined in
+the same translation unit as every command emitter, GCC's interprocedural
+analysis concludes the callback modifies no memory and lets callers keep
+context->current / context->end cached in registers across the call. When a
+command emitter triggers the wrap, it then writes its words at the stale
+pre-wrap position (past the segment end, over the jump word the callback just
+wrote) and stores an inconsistent current pointer. Observed with the ps3dev
+gcc 13.2.0 toolchain in rsxLoadVertexProgramBlock and
+rsxLoadVertexProgramParameterBlock: after "bl rsxContextCallback" execution
+branches back without reloading context->current, and the RSX FIFO desyncs on
+constant data a few words into the next segment.
+
+Declaring the memory clobber makes the callback opaque to the optimizer, so
+every emitter reloads the context pointers after a wrap.
+---
+diff --git a/ppu/include/rsx/rsx_function_macros.h b/ppu/include/rsx/rsx_function_macros.h
+index bffc3a1..91ee913 100644
+--- a/ppu/include/rsx/rsx_function_macros.h
++++ b/ppu/include/rsx/rsx_function_macros.h
+@@ -26,7 +26,7 @@
+             "addi	1,1,128\n"
+             : "+r"(result)
+             : "r"(context), "r"(count), "b"(context->callback)
+-            : "r31", "r0", "lr"
++            : "r31", "r0", "lr", "memory"
+ 		);
+ 		return result;
+ 	}

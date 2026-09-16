@@ -72,12 +72,20 @@ RUN set -eux; \
 # PSL1GHT at the pinned commit. The PPU runtime, sprx import stubs, librsx and
 # the host tools (cgcomp, sprxlinker, make_self, fself, bin2s, sfo/pkg, raw2h)
 # are built; the SPU libraries and libspumars are deferred with SPU work.
+# The repository-owned patches under docker/patches are applied on top of the
+# pinned commit and recorded (with their hashes) in toolchain-lock.json.
+COPY patches /build/patches
 RUN set -eux; \
     git init PSL1GHT; \
     git -C PSL1GHT remote add origin "${PSL1GHT_REPOSITORY}"; \
     git -C PSL1GHT fetch --depth 1 origin "${PSL1GHT_COMMIT}"; \
     git -C PSL1GHT checkout --detach "${PSL1GHT_COMMIT}"; \
-    test "$(git -C PSL1GHT rev-parse HEAD)" = "${PSL1GHT_COMMIT}"
+    test "$(git -C PSL1GHT rev-parse HEAD)" = "${PSL1GHT_COMMIT}"; \
+    for patch in /build/patches/*.patch; do \
+        echo "Applying $(basename "$patch")"; \
+        git -C PSL1GHT apply --verbose "$patch"; \
+    done; \
+    grep -q '"r31", "r0", "lr", "memory"' PSL1GHT/ppu/include/rsx/rsx_function_macros.h
 
 RUN set -eux; \
     cd PSL1GHT; \
@@ -103,6 +111,7 @@ RUN set -eux; \
     cp ps3toolchain/LICENSE "${PS3DEV}/helengine/LICENSE.ps3toolchain"; \
     cp PSL1GHT/LICENSE "${PS3DEV}/helengine/LICENSE.PSL1GHT"; \
     cp ps3toolchain/archives/archives.txt "${PS3DEV}/helengine/ps3toolchain-archives.txt"; \
+    cp /build/patches/*.patch "${PS3DEV}/helengine/"; \
     cp /opt/builder-apt-packages.txt "${PS3DEV}/helengine/builder-apt-packages.txt"; \
     { \
       echo "Ps3ToolchainCommit=${PS3TOOLCHAIN_COMMIT}"; \
@@ -120,6 +129,7 @@ RUN set -eux; \
       echo "NewlibPatchSha256=$(sha256sum ps3toolchain/patches/newlib-1.20.0-PS3.patch | awk '{print $1}')"; \
       echo "GccPatchSha256=$(sha256sum ps3toolchain/patches/gcc-13.2.0-PS3.patch | awk '{print $1}')"; \
       echo "BinutilsPatchSha256=$(sha256sum ps3toolchain/patches/binutils-2.22-PS3.patch | awk '{print $1}')"; \
+      echo "Psl1ghtLocalPatches=$(cd /build/patches && sha256sum *.patch | awk '{print $2"="$1}' | tr '\n' ' ')"; \
       echo "MachDep=-mhard-float -fmodulo-sched -ffunction-sections -fdata-sections"; \
       echo "CpuFlag=-mcpu=cell"; \
       echo "SpuToolchain=not built (deferred with SPU work)"; \

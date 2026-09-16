@@ -194,6 +194,19 @@ if ($lock.SchemaVersion -ne 1) { throw "Unsupported toolchain-lock.json SchemaVe
 $inputs = $lock.Inputs
 $inputs.DockerfileSha256 = Get-FileSha256 $dockerfilePath
 $inputs.DockerIgnoreSha256 = Get-FileSha256 $dockerIgnorePath
+# Repository-owned SDK patches are build inputs too: record each one by name and hash.
+$patchDirectory = Join-Path $dockerDirectory 'patches'
+$patchRecords = @()
+if (Test-Path -LiteralPath $patchDirectory -PathType Container) {
+    foreach ($patchFile in (Get-ChildItem -LiteralPath $patchDirectory -Filter '*.patch' -File | Sort-Object Name)) {
+        $patchRecords += [PSCustomObject]@{ Name = $patchFile.Name; Sha256 = Get-FileSha256 $patchFile.FullName }
+    }
+}
+if ($inputs.PSObject.Properties.Name -contains 'Psl1ghtPatches') {
+    $inputs.Psl1ghtPatches = $patchRecords
+} else {
+    $inputs | Add-Member -MemberType NoteProperty -Name 'Psl1ghtPatches' -Value $patchRecords
+}
 $canonicalInputs = ConvertTo-CanonicalJson $inputs
 $inputsHash = Get-TextSha256 $canonicalInputs
 $imageTag = "helengine-ps3-sdk:$inputsHash"
@@ -358,6 +371,7 @@ $lock.ResolvedImage = [PSCustomObject]@{
     NewlibPatchSha256 = $metadata['NewlibPatchSha256']
     GccPatchSha256 = $metadata['GccPatchSha256']
     BinutilsPatchSha256 = $metadata['BinutilsPatchSha256']
+    Psl1ghtLocalPatches = $metadata['Psl1ghtLocalPatches']
     MachDep = $metadata['MachDep']
     CpuFlag = $metadata['CpuFlag']
     ReadelfPath = $metadata['ReadelfPath']
