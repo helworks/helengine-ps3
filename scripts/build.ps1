@@ -23,8 +23,12 @@ param(
     [ValidateRange(0,3600)][int]$RunSeconds = 0,
     [ValidateSet('None','AfterVideo','AfterRenderer')]
     [string]$FailurePoint = 'None',
-    [string]$OutputRoot = 'C:\dev\helworks\builds\helengine-ps3'
+    [string]$OutputRoot = 'C:\dev\helworks\builds\helengine-ps3',
+    [ValidateRange(0.0, 6.2832)][double]$FixedPoseRadians = 0.6
 )
+# FixedPoseRadians is a documented diagnostic: it only applies with -FixedPose and lets
+# known orientations (0, pi/2, pi) be built for depth/culling checks. 0.6 is the
+# documented fixed pose of the final build interface.
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -128,6 +132,7 @@ $defines = [Collections.Generic.List[string]]::new()
 if ($Mode -eq 'Clear') { $defines.Add('-DHELENGINE_PS3_CLEAR_ONLY=1') } else { $defines.Add('-DHELENGINE_PS3_CLEAR_ONLY=0') }
 if ($FixedPose) { $defines.Add('-DHELENGINE_PS3_FIXED_POSE=1') } else { $defines.Add('-DHELENGINE_PS3_FIXED_POSE=0') }
 $defines.Add("-DHELENGINE_PS3_RUN_SECONDS=$RunSeconds")
+$defines.Add('-DHELENGINE_PS3_FIXED_POSE_RADIANS=' + $FixedPoseRadians.ToString('0.0####', [Globalization.CultureInfo]::InvariantCulture) + 'f')
 $failurePointValue = switch ($FailurePoint) { 'None' { 0 } 'AfterVideo' { 1 } 'AfterRenderer' { 2 } }
 $defines.Add("-DHELENGINE_PS3_FAILURE_POINT=$failurePointValue")
 $definesText = $defines -join ' '
@@ -211,6 +216,7 @@ $manifest = [PSCustomObject]@{
     FixedPose = [bool]$FixedPose
     RunSeconds = $RunSeconds
     FailurePoint = $FailurePoint
+    FixedPoseRadians = $FixedPoseRadians
     ToolchainLockSha256 = $lockHash
     ImageId = $imageId
     LaunchArtifact = $launchArtifactName

@@ -7,8 +7,12 @@ namespace helengine::ps3 {
         /// True to present only the cleared surface and never initialize the cube renderer.
         bool ClearOnly;
 
-        /// True to hold the documented fixed pose (0.6 radians) instead of rotating over time.
+        /// True to hold a fixed pose instead of rotating over time.
         bool FixedPose;
+
+        /// Rotation about Y in radians used when FixedPose is set. The documented default
+        /// is 0.6; other values are a build-time diagnostic for known orientations.
+        float FixedPoseRadians;
 
         /// Wall-clock run duration in seconds; 0 runs until the system requests exit.
         unsigned RunSeconds;

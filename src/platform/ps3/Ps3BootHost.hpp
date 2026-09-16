@@ -23,9 +23,6 @@ namespace helengine::ps3 {
         /// Rotation speed in radians per second for the animated pose.
         static constexpr float RotationRadiansPerSecond = 0.5f;
 
-        /// Pose used when the fixed-pose option is set.
-        static constexpr float FixedPoseRadians = 0.6f;
-
         /// Largest animation step accepted per frame, so pauses do not jump the pose.
         static constexpr float MaximumStepSeconds = 0.1f;
 

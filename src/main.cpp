@@ -5,8 +5,8 @@
 
 // Run settings are explicit compile definitions supplied by scripts/build.ps1; a build
 // without them is a configuration error, not a default.
-#if !defined(HELENGINE_PS3_CLEAR_ONLY) || !defined(HELENGINE_PS3_FIXED_POSE) || !defined(HELENGINE_PS3_RUN_SECONDS) || !defined(HELENGINE_PS3_FAILURE_POINT)
-#error "HELENGINE_PS3_CLEAR_ONLY, HELENGINE_PS3_FIXED_POSE, HELENGINE_PS3_RUN_SECONDS and HELENGINE_PS3_FAILURE_POINT must be defined by the build wrapper"
+#if !defined(HELENGINE_PS3_CLEAR_ONLY) || !defined(HELENGINE_PS3_FIXED_POSE) || !defined(HELENGINE_PS3_RUN_SECONDS) || !defined(HELENGINE_PS3_FAILURE_POINT) || !defined(HELENGINE_PS3_FIXED_POSE_RADIANS)
+#error "HELENGINE_PS3_CLEAR_ONLY, HELENGINE_PS3_FIXED_POSE, HELENGINE_PS3_FIXED_POSE_RADIANS, HELENGINE_PS3_RUN_SECONDS and HELENGINE_PS3_FAILURE_POINT must be defined by the build wrapper"
 #endif
 
 /// Declares the PPU process parameters read by GameOS: normal priority (1001) and a 1 MiB main stack.
@@ -17,6 +17,7 @@ int main() {
     helengine::ps3::Ps3RunOptions options;
     options.ClearOnly = (HELENGINE_PS3_CLEAR_ONLY) != 0;
     options.FixedPose = (HELENGINE_PS3_FIXED_POSE) != 0;
+    options.FixedPoseRadians = static_cast<float>(HELENGINE_PS3_FIXED_POSE_RADIANS);
     options.RunSeconds = static_cast<unsigned>(HELENGINE_PS3_RUN_SECONDS);
     options.FailurePoint = static_cast<unsigned>(HELENGINE_PS3_FAILURE_POINT);
     return helengine::ps3::Ps3BootHost::Run(options);

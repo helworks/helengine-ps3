@@ -46,8 +46,8 @@ namespace helengine::ps3 {
     }
 
     int Ps3BootHost::Run(const Ps3RunOptions& options) {
-        std::printf("PS3_BOOT clearOnly=%d fixedPose=%d runSeconds=%u failurePoint=%u\n",
-                    options.ClearOnly ? 1 : 0, options.FixedPose ? 1 : 0, options.RunSeconds, options.FailurePoint);
+        std::printf("PS3_BOOT clearOnly=%d fixedPose=%d fixedPoseRadians=%.4f runSeconds=%u failurePoint=%u\n",
+                    options.ClearOnly ? 1 : 0, options.FixedPose ? 1 : 0, static_cast<double>(options.FixedPoseRadians), options.RunSeconds, options.FailurePoint);
         ExitRequested = false;
         const s32 callbackResult = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT0, HandleSystemEvent, nullptr);
         if (callbackResult != 0) {
@@ -61,6 +61,7 @@ namespace helengine::ps3 {
         bool videoReady = false;
         bool rendererReady = false;
         const char* exitReason = "none";
+        float pose = options.FixedPose ? options.FixedPoseRadians : 0.0f;
 
         if (!video.Initialize()) {
             failed = true;
@@ -91,7 +92,6 @@ namespace helengine::ps3 {
             const s64 startMicroseconds = sysGetSystemTime();
             s64 previousMicroseconds = startMicroseconds;
             s64 nextStatisticsMicroseconds = startMicroseconds + static_cast<s64>(StatisticsIntervalSeconds) * 1000000;
-            float pose = options.FixedPose ? FixedPoseRadians : 0.0f;
             const s64 runLimitMicroseconds = static_cast<s64>(options.RunSeconds) * 1000000;
             unsigned previousCommandOffset = video.CommandWriteOffset();
             unsigned ringWrapCount = 0;
@@ -176,7 +176,7 @@ namespace helengine::ps3 {
             }
         }
         if (rendererReady && drained && video.PresentedFrameCount() > 0) {
-            LogFrameProbe(video, "final-frame", 0.0f);
+            LogFrameProbe(video, "final-frame", pose);
         }
         if (rendererReady && drained) {
             renderer.Shutdown();

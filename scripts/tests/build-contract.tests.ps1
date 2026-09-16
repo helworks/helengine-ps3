@@ -164,7 +164,7 @@ try {
 
     # Successful build in a path with spaces writes a complete manifest.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
-    & $buildScript -BuildId 'spaces-01' -Mode Cube -FixedPose -RunSeconds 30 -FailurePoint AfterRenderer -OutputRoot $outputRoot | Out-Null
+    & $buildScript -BuildId 'spaces-01' -Mode Cube -FixedPose -FixedPoseRadians 1.5708 -RunSeconds 30 -FailurePoint AfterRenderer -OutputRoot $outputRoot | Out-Null
     $successRoot = Join-Path $outputRoot 'spaces-01'
     $manifestPath = Join-Path $successRoot 'build-manifest.json'
     Assert-True 'Success manifest exists' (Test-Path -LiteralPath $manifestPath)
@@ -174,7 +174,8 @@ try {
     Assert-True 'Manifest records lock hash' ($manifest.ToolchainLockSha256 -eq (Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash.ToLowerInvariant())
     Assert-True 'Manifest records shader artifacts' (@($manifest.Artifacts | Where-Object { $_.Path -eq 'shaders/unlit.vpo' }).Count -eq 1)
     $dockerArgsText = Get-Content -LiteralPath (Join-Path $successRoot 'fake-docker-args.txt') -Raw
-    Assert-True 'Build passed explicit definitions' ($dockerArgsText -match 'HELENGINE_PS3_FIXED_POSE=1' -and $dockerArgsText -match 'HELENGINE_PS3_RUN_SECONDS=30' -and $dockerArgsText -match 'HELENGINE_PS3_FAILURE_POINT=2' -and $dockerArgsText -match 'HELENGINE_PS3_CLEAR_ONLY=0')
+    Assert-True 'Build passed explicit definitions' ($dockerArgsText -match 'HELENGINE_PS3_FIXED_POSE=1' -and $dockerArgsText -match 'HELENGINE_PS3_FIXED_POSE_RADIANS=1\.5708f' -and $dockerArgsText -match 'HELENGINE_PS3_RUN_SECONDS=30' -and $dockerArgsText -match 'HELENGINE_PS3_FAILURE_POINT=2' -and $dockerArgsText -match 'HELENGINE_PS3_CLEAR_ONLY=0')
+    Assert-True 'Manifest records the fixed pose' ($manifest.FixedPoseRadians -eq 1.5708)
     Assert-True 'Build disabled networking' ($dockerArgsText -match '--network\nnone')
     Assert-True 'Build mounted source read-only' ($dockerArgsText -match 'target=/src,readonly')
     Assert-True 'Build mounted Cg read-only' ($dockerArgsText -match 'target=/opt/cg,readonly')
