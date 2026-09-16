@@ -55,7 +55,7 @@ powershell -NoProfile -File scripts/tests/build-contract.tests.ps1
 ## Known blockers and limits
 
 - Emulator evidence only: nothing has run on PS3 hardware.
-- Visual confirmation by a person is pending; the host's own pixel readback of the
-  displayed frame is the automated evidence (see docs/Validation.md).
+- Visually confirmed by Helena in RPCS3 on 2026-09-16; the host's own pixel readback of
+  the displayed frame is the automated evidence (see docs/Validation.md).
 - The image carries one local patch to PSL1GHT (`docker/patches/`) fixing a wrap
   callback codegen bug in librsx; it is pinned by hash in `toolchain-lock.json`.

@@ -3,8 +3,9 @@
 All evidence below was produced on 2026-09-15/16 on the development PC with the
 artifacts under `C:\dev\helworks\builds\helengine-ps3\`. Emulator results are RPCS3
 results; nothing has run on PS3 hardware. Screenshots were not taken. Visual observation
-by a person is still pending; the host's own pixel readback of the displayed frame is the
-automated rendering evidence.
+by a person: Helena confirmed the rotating cube visually in RPCS3 on 2026-09-16
+(`acceptance-cube-02`, `-Visible`). The host's own pixel readback of the displayed frame
+is the automated rendering evidence.
 
 ## Environment
 
@@ -101,6 +102,5 @@ Repeated short build/run cycles during the session: `pose-0-01`, `pose-halfpi-01
 
 ## Pending
 
-- Visual confirmation by a person (run any Cube build with `-Visible`).
 - Hardware validation.
 - SPU toolchain and libraries (not built into the image).
