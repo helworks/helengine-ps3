@@ -87,7 +87,11 @@ GENERATED_SYSTEM_INCLUDES := -isystem $(GENERATED_CORE_ROOT) -isystem $(GENERATE
 NEWLIB_MATH_COMPAT := -D_GLIBCXX_USE_C99_MATH_TR1=1 -include $(SRC_ROOT)/src/platform/ps3/Ps3NewlibMathCompat.hpp
 
 # The generated runtime uses C++20 requires-expressions, so the whole Core build is C++20.
-GENERATED_STANDARD := -std=c++20
+# The GNU dialect rather than strict ISO: strict mode defines __STRICT_ANSI__, which makes
+# newlib hide its POSIX declarations, and the generated file-stream code calls fileno,
+# fstat and ftruncate whenever hosted filesystem support is on. The language features are
+# identical between the two; only the visibility of platform extensions differs.
+GENERATED_STANDARD := -std=gnu++20
 
 # Generated code is machine output, not project code: it is compiled with warnings visible
 # but never with -Werror, because a generator warning is fixed in the generator.

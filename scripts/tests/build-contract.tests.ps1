@@ -184,6 +184,25 @@ try {
     # The parameter is meaningless outside Core mode and must be refused rather than ignored.
     Assert-Rejected 'Generated root outside Core mode' { & $buildScript -BuildId 'core-misuse-01' -Mode Cube -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'only valid in Core mode'
 
+    # A successful Core-mode build must fingerprint the generated tree and record it. This
+    # ran only during a real build before, so a failure in it was invisible to these tests
+    # until a ten-minute compile had already completed.
+    $fakeCoreRoot = Join-Path $testsRoot 'fake-core'
+    New-Item -ItemType Directory -Path (Join-Path $fakeCoreRoot 'runtime') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $fakeCoreRoot 'helengine_core_unity.cpp') -Value '#include "runtime/thing.cpp"' -Encoding Ascii
+    Set-Content -LiteralPath (Join-Path $fakeCoreRoot 'runtime\thing.cpp') -Value 'int thing() { return 1; }' -Encoding Ascii
+    & $buildScript -BuildId 'core-ok-01' -Mode Core -GeneratedCoreRoot $fakeCoreRoot -OutputRoot $outputRoot | Out-Null
+    $coreManifestPath = Join-Path $outputRoot 'core-ok-01\build-manifest.json'
+    Assert-True 'Core mode wrote a manifest' (Test-Path -LiteralPath $coreManifestPath)
+    if (Test-Path -LiteralPath $coreManifestPath) {
+        $coreManifest = Get-Content -LiteralPath $coreManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Assert-True 'Core manifest records the mode' ($coreManifest.Mode -eq 'Core')
+        Assert-True 'Core manifest records the unity file' ($coreManifest.GeneratedCoreUnity -eq 'helengine_core_unity.cpp')
+        Assert-True 'Core manifest counts generated files' ($coreManifest.GeneratedCoreFileCount -eq 2)
+        Assert-True 'Core manifest fingerprints the tree' ($coreManifest.GeneratedCoreSha256 -match '^[0-9a-f]{64}$')
+        Assert-True 'Core mode wrote the generated hash list' (Test-Path -LiteralPath (Join-Path $outputRoot 'core-ok-01\generated-core-hashes.txt'))
+    }
+
     # Zero-byte output is rejected even though the container exited zero.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'zero-elf'
     Assert-Rejected 'Zero-byte ELF' { & $buildScript -BuildId 'zero-01' -Mode Clear -OutputRoot $outputRoot }

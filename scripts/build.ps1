@@ -258,14 +258,31 @@ $generatedCoreFileCount = 0
 if ($Mode -eq 'Core') {
     $generatedFiles = @(Get-ChildItem -LiteralPath $GeneratedCoreRoot -File -Recurse | Sort-Object FullName)
     $generatedCoreFileCount = $generatedFiles.Count
+    # Relative paths are computed by trimming the root prefix rather than with
+    # [IO.Path]::GetRelativePath, which does not exist on the .NET Framework that Windows
+    # PowerShell 5.1 runs on.
+    $generatedRootPrefix = $GeneratedCoreRoot.TrimEnd('\', '/') + '\'
     $generatedLines = @(
         foreach ($generatedFile in $generatedFiles) {
-            $relativePath = [IO.Path]::GetRelativePath($GeneratedCoreRoot, $generatedFile.FullName).Replace('\', '/')
+            $fullPath = $generatedFile.FullName
+            if (-not $fullPath.StartsWith($generatedRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Generated file lies outside the generated Core root: $fullPath"
+            }
+            $relativePath = $fullPath.Substring($generatedRootPrefix.Length).Replace('\', '/')
             "$relativePath=$((Get-FileHash -LiteralPath $generatedFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
         }
     )
-    $generatedCoreFingerprint = [Convert]::ToHexString(
-        [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($generatedLines -join "`n"))).ToLowerInvariant()
+    # Hashed through a created instance rather than SHA256::HashData, which the .NET
+    # Framework behind Windows PowerShell 5.1 does not provide.
+    $generatedFingerprintBytes = [Text.Encoding]::UTF8.GetBytes($generatedLines -join "`n")
+    $generatedSha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $generatedHashBytes = $generatedSha.ComputeHash($generatedFingerprintBytes)
+    }
+    finally {
+        $generatedSha.Dispose()
+    }
+    $generatedCoreFingerprint = ([BitConverter]::ToString($generatedHashBytes)).Replace('-', '').ToLowerInvariant()
     Set-Content -LiteralPath (Join-Path $buildRoot 'generated-core-hashes.txt') -Value $generatedLines -Encoding UTF8
 }
 
