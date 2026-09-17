@@ -184,6 +184,11 @@ try {
     # The parameter is meaningless outside Core mode and must be refused rather than ignored.
     Assert-Rejected 'Generated root outside Core mode' { & $buildScript -BuildId 'core-misuse-01' -Mode Cube -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'only valid in Core mode'
 
+    # A Core failure point outside Core mode would compile away with no Core present, so the
+    # build would appear to honour a request it silently dropped.
+    Assert-Rejected 'Core failure point outside Core mode' { & $buildScript -BuildId 'core-fp-misuse-01' -Mode Cube -CoreFailurePoint 'DuringCoreDraw' -OutputRoot $outputRoot } '-CoreFailurePoint is only valid in Core mode'
+    Assert-True 'Core failure point outside Core mode left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'core-fp-misuse-01\build-manifest.json')))
+
     # A successful Core-mode build must fingerprint the generated tree and record it. This
     # ran only during a real build before, so a failure in it was invisible to these tests
     # until a ten-minute compile had already completed.
@@ -198,6 +203,7 @@ try {
         $coreManifest = Get-Content -LiteralPath $coreManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
         Assert-True 'Core manifest records the mode' ($coreManifest.Mode -eq 'Core')
         Assert-True 'Core manifest records the unity file' ($coreManifest.GeneratedCoreUnity -eq 'helengine_core_unity.cpp')
+        Assert-True 'Core manifest records the Core failure point' ($coreManifest.CoreFailurePoint -eq 'None')
         Assert-True 'Core manifest counts generated files' ($coreManifest.GeneratedCoreFileCount -eq 2)
         Assert-True 'Core manifest fingerprints the tree' ($coreManifest.GeneratedCoreSha256 -match '^[0-9a-f]{64}$')
         Assert-True 'Core mode wrote the generated hash list' (Test-Path -LiteralPath (Join-Path $outputRoot 'core-ok-01\generated-core-hashes.txt'))

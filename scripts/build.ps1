@@ -25,7 +25,9 @@ param(
     [string]$FailurePoint = 'None',
     [string]$OutputRoot = 'C:\dev\helworks\builds\helengine-ps3',
     [ValidateRange(0.0, 6.2832)][double]$FixedPoseRadians = 0.6,
-    [string]$GeneratedCoreRoot = ''
+    [string]$GeneratedCoreRoot = '',
+    [ValidateSet('None','AfterCoreInitialize','DuringCoreDraw')]
+    [string]$CoreFailurePoint = 'None'
 )
 # GeneratedCoreRoot is the root of a generated Core C++ tree produced by the platform
 # build. It is required by Core mode and refused by every other mode, so a build can never
@@ -159,10 +161,20 @@ if ($Mode -eq 'Core') {
     throw "-GeneratedCoreRoot is only valid in Core mode; this build requested mode '$Mode'."
 }
 
+# A Core failure point outside Core mode would compile away silently, so the request is
+# refused rather than ignored.
+if ($Mode -ne 'Core' -and $CoreFailurePoint -ne 'None') {
+    throw "-CoreFailurePoint is only valid in Core mode; this build requested mode '$Mode'."
+}
+
 # --- Explicit compile definitions -----------------------------------------------------
 $defines = [Collections.Generic.List[string]]::new()
 if ($Mode -eq 'Clear') { $defines.Add('-DHELENGINE_PS3_CLEAR_ONLY=1') } else { $defines.Add('-DHELENGINE_PS3_CLEAR_ONLY=0') }
-if ($Mode -eq 'Core') { $defines.Add('-DHELENGINE_PS3_HAS_GENERATED_CORE=1') }
+if ($Mode -eq 'Core') {
+    $defines.Add('-DHELENGINE_PS3_HAS_GENERATED_CORE=1')
+    $coreFailurePointValue = switch ($CoreFailurePoint) { 'None' { 0 } 'AfterCoreInitialize' { 1 } 'DuringCoreDraw' { 2 } }
+    $defines.Add("-DHELENGINE_PS3_CORE_FAILURE_POINT=$coreFailurePointValue")
+}
 if ($FixedPose) { $defines.Add('-DHELENGINE_PS3_FIXED_POSE=1') } else { $defines.Add('-DHELENGINE_PS3_FIXED_POSE=0') }
 $defines.Add("-DHELENGINE_PS3_RUN_SECONDS=$RunSeconds")
 $defines.Add('-DHELENGINE_PS3_FIXED_POSE_RADIANS=' + $FixedPoseRadians.ToString('0.0####', [Globalization.CultureInfo]::InvariantCulture) + 'f')
@@ -296,6 +308,7 @@ $manifest = [PSCustomObject]@{
     FixedPose = [bool]$FixedPose
     RunSeconds = $RunSeconds
     FailurePoint = $FailurePoint
+    CoreFailurePoint = $CoreFailurePoint
     FixedPoseRadians = $FixedPoseRadians
     ToolchainLockSha256 = $lockHash
     GeneratedCoreRoot = $GeneratedCoreRoot
