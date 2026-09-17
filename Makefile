@@ -75,10 +75,24 @@ OBJECTS += $(GENERATED_UNITY_OBJECT) $(GENERATED_EXTRA_OBJECTS)
 DEPS += $(GENERATED_UNITY_OBJECT:.o=.d) $(GENERATED_EXTRA_OBJECTS:.o=.d)
 
 GENERATED_INCLUDES := -I$(GENERATED_CORE_ROOT) -I$(GENERATED_CORE_ROOT)/runtime
+# Project code includes generated headers as system headers, so warnings inside machine
+# output never fail this project's -Werror build. Generated code itself is compiled with
+# ordinary -I, because its own warnings are worth seeing.
+GENERATED_SYSTEM_INCLUDES := -isystem $(GENERATED_CORE_ROOT) -isystem $(GENERATED_CORE_ROOT)/runtime
+
+# Two toolchain accommodations, both required by this cross toolchain rather than by the
+# generated code, and both explained in Ps3NewlibMathCompat.hpp:
+#   - libstdc++ hides its C99 math overloads behind a macro that is off in this build.
+#   - five long-double entry points it then expects are absent from newlib.
+NEWLIB_MATH_COMPAT := -D_GLIBCXX_USE_C99_MATH_TR1=1 -include $(SRC_ROOT)/src/platform/ps3/Ps3NewlibMathCompat.hpp
+
+# The generated runtime uses C++20 requires-expressions, so the whole Core build is C++20.
+GENERATED_STANDARD := -std=c++20
+
 # Generated code is machine output, not project code: it is compiled with warnings visible
 # but never with -Werror, because a generator warning is fixed in the generator.
-GENERATED_CXXFLAGS := -std=c++17 -Wall -Wextra -O2 -g -mcpu=cell $(MACHDEP) -fexceptions -frtti \
-    $(GENERATED_INCLUDES) -isystem $(PSL1GHT)/ppu/include -I$(SRC_ROOT)/src -I$(SHADER_ROOT) $(HELENGINE_DEFINES)
+GENERATED_CXXFLAGS := $(GENERATED_STANDARD) -Wall -Wextra -O2 -g -mcpu=cell $(MACHDEP) -fexceptions -frtti \
+    $(NEWLIB_MATH_COMPAT) $(GENERATED_INCLUDES) -isystem $(PSL1GHT)/ppu/include -I$(SRC_ROOT)/src -I$(SHADER_ROOT) $(HELENGINE_DEFINES)
 endif
 DEPENDS := $(OBJECTS:.o=.d)
 
@@ -96,9 +110,10 @@ SHADER_HEADERS := $(patsubst %.vpo,%_vpo.h,$(VPO_FILES)) $(patsubst %.fpo,%_fpo.
 INCLUDES := -I$(SRC_ROOT)/src -I$(SHADER_ROOT) -isystem $(PSL1GHT)/ppu/include
 ifeq ($(MODE),Core)
 # Project code compiled in Core mode must see the generated headers and must be built with
-# the same exception and RTTI settings as the generated tree it links against.
-INCLUDES += $(GENERATED_INCLUDES)
-CXXFLAGS := -std=c++17 -Wall -Wextra -Werror -O2 -g -mcpu=cell $(MACHDEP) -fexceptions -frtti $(INCLUDES) $(HELENGINE_DEFINES)
+# the same language standard, exception and RTTI settings as the generated tree it links
+# against, or the two halves disagree at the ABI boundary.
+INCLUDES += $(GENERATED_SYSTEM_INCLUDES)
+CXXFLAGS := $(GENERATED_STANDARD) -Wall -Wextra -Werror -O2 -g -mcpu=cell $(MACHDEP) -fexceptions -frtti $(NEWLIB_MATH_COMPAT) $(INCLUDES) $(HELENGINE_DEFINES)
 else
 CXXFLAGS := -std=c++17 -Wall -Wextra -Werror -O2 -g -mcpu=cell $(MACHDEP) $(INCLUDES) $(HELENGINE_DEFINES)
 endif
@@ -119,13 +134,14 @@ endif
 # confusing link errors far from their cause.
 verify-generated-core:
 ifeq ($(MODE),Core)
-	@overlap="$$(comm -12 \
-	  <(printf '%s\n' $(addprefix $(GENERATED_CORE_ROOT)/,$(GENERATED_UNITY_INCLUDES)) | sort -u) \
-	  <(printf '%s\n' $(GENERATED_EXTRA_SOURCES) | sort -u))"; \
-	if [ -n "$$overlap" ]; then \
-	  echo "Generated sources would be compiled twice:"; echo "$$overlap"; exit 1; \
-	fi; \
-	echo "Generated Core: unity $(notdir $(GENERATED_UNITY_SOURCE)), $(words $(GENERATED_UNITY_INCLUDES)) included, $(words $(GENERATED_EXTRA_SOURCES)) separate translation units"
+	@mkdir -p "$(BUILD_ROOT)"
+	@printf '%s\n' $(addprefix $(GENERATED_CORE_ROOT)/,$(GENERATED_UNITY_INCLUDES)) | sort -u > "$(BUILD_ROOT)/generated-unity-includes.txt"
+	@printf '%s\n' $(GENERATED_EXTRA_SOURCES) | sort -u > "$(BUILD_ROOT)/generated-extra-sources.txt"
+	@comm -12 "$(BUILD_ROOT)/generated-unity-includes.txt" "$(BUILD_ROOT)/generated-extra-sources.txt" > "$(BUILD_ROOT)/generated-overlap.txt"
+	@if [ -s "$(BUILD_ROOT)/generated-overlap.txt" ]; then \
+	  echo "Generated sources would be compiled twice:"; cat "$(BUILD_ROOT)/generated-overlap.txt"; exit 1; \
+	fi
+	@echo "Generated Core: unity $(notdir $(GENERATED_UNITY_SOURCE)), $(words $(GENERATED_UNITY_INCLUDES)) included, $(words $(GENERATED_EXTRA_SOURCES)) separate translation units"
 endif
 
 $(OBJ_ROOT)/%.o: $(SRC_ROOT)/src/%.cpp $(SHADER_HEADERS)
