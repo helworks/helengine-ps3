@@ -73,6 +73,10 @@ if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
 }
 
 New-Item -ItemType Directory -Path $settingsRoot -Force | Out-Null
+# The generated-core directory must exist before discovery runs. A declared path that is
+# absent makes the resolver treat the whole platform as not installed, which surfaces much
+# later and far less clearly as "no loaded platform builder is registered for 'ps3'".
+New-Item -ItemType Directory -Path $generatedCoreRoot -Force | Out-Null
 
 $manifest = [PSCustomObject]@{
     platforms = @(
