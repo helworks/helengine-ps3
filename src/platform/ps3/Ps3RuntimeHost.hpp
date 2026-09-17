@@ -6,9 +6,11 @@
 #include <cstdint>
 
 class Core;
+class CoreInitializationOptions;
 class PlatformInfo;
 
 namespace helengine::ps3 {
+    class Ps3ContentStreamSource;
     class Ps3InputBackend;
     class Ps3RenderManager2D;
     class Ps3RenderManager3D;
@@ -127,6 +129,16 @@ namespace helengine::ps3 {
         /// @return True when the boundary completed without an escaping exception.
         bool CompleteFrameBoundary();
 
+        /// Arms a deliberate raise inside the 2D adapter, which Core calls during its draw.
+        ///
+        /// Call before Initialize. The raise then travels back out through generated stack
+        /// frames and is caught by the boundary in Draw, which is what proves unwinding.
+        void ArmDeliberateDrawFailure();
+
+        /// Records a stop the build asked for, distinguishing it from a real defect.
+        /// @param stageName Stage the build asked to stop at, for the log.
+        void FailDeliberately(const char* stageName);
+
         /// Disposes Core and releases the adapters. Safe to call once after a failed start.
         /// @return True when disposal completed without an escaping exception.
         bool Shutdown();
@@ -156,6 +168,13 @@ namespace helengine::ps3 {
         /// Input adapter bound to Core.
         Ps3InputBackend* InputBackendInstance;
 
+        /// Content source Core reads assets through. Core refuses to initialize without one,
+        /// even for a run that reads nothing.
+        Ps3ContentStreamSource* ContentStreamSourceInstance;
+
+        /// Settings Core is initialized with, carrying the content source above.
+        ::CoreInitializationOptions* InitializationOptionsInstance;
+
         /// Furthest stage reached.
         Ps3CoreStage StageValue;
 
@@ -167,6 +186,9 @@ namespace helengine::ps3 {
 
         /// Whether Shutdown has already run.
         bool ShutdownDone;
+
+        /// Whether the build asked the 2D adapter to raise once, for the unwinding gate.
+        bool ArmDrawFailure;
 
         /// Records a stage transition in both the log and the snapshot.
         void EnterStage(Ps3CoreStage stage);

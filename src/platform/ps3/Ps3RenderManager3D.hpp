@@ -24,8 +24,17 @@ namespace helengine::ps3 {
         /// Counts how many times Core asked this manager to draw.
         std::uint32_t DrawCount() const;
 
-        /// Records the draw request and presents nothing. The boot gate's visible output is
-        /// the v0.1 cube, which the native renderer draws independently of Core.
+        /// Arms a deliberate raise on the next draw.
+        ///
+        /// Core calls this manager from inside its own draw, so the raise travels back out
+        /// through generated stack frames before the runtime host catches it. That is the
+        /// evidence that enabling exceptions for this platform was real rather than nominal.
+        /// The 3D manager is the target because Core drives it every frame, while it never
+        /// calls the 2D manager for the empty scene this gate runs.
+        void ArmDeliberateRaise();
+
+        /// Records the draw request and presents nothing, or raises when armed. The boot
+        /// gate's visible output is the v0.1 cube, drawn independently of Core.
         void Draw() override;
 
         /// Refuses model construction, which belongs to the authored scene milestone.
@@ -42,6 +51,9 @@ namespace helengine::ps3 {
 
         /// Whether the first draw has already been logged, so the log stays readable.
         bool LoggedFirstDraw;
+
+        /// Whether the build asked the next draw to raise, for the unwinding gate.
+        bool RaiseOnDraw;
     };
 }
 

@@ -19,5 +19,13 @@ namespace helengine::ps3 {
 
         /// Deliberate failure stage for lifecycle validation: 0 none, 1 after video, 2 after renderer.
         unsigned FailurePoint;
+
+        /// True to construct generated Core and drive its lifecycle alongside the cube.
+        /// Only a build that compiled a generated tree can set this.
+        bool CoreEnabled;
+
+        /// Deliberate Core failure stage: 0 none, 1 after Core initializes, 2 raised from
+        /// inside a Core draw. Stage 2 proves an exception unwinds through generated frames.
+        unsigned CoreFailurePoint;
     };
 }

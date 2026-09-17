@@ -9,6 +9,15 @@
 #error "HELENGINE_PS3_CLEAR_ONLY, HELENGINE_PS3_FIXED_POSE, HELENGINE_PS3_FIXED_POSE_RADIANS, HELENGINE_PS3_RUN_SECONDS and HELENGINE_PS3_FAILURE_POINT must be defined by the build wrapper"
 #endif
 
+// The Core failure point is meaningful only where a generated tree was compiled in, so a
+// native build neither requires it nor silently accepts one.
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE) && !defined(HELENGINE_PS3_CORE_FAILURE_POINT)
+#error "A Core-mode build must define HELENGINE_PS3_CORE_FAILURE_POINT"
+#endif
+#if !defined(HELENGINE_PS3_HAS_GENERATED_CORE) && defined(HELENGINE_PS3_CORE_FAILURE_POINT)
+#error "HELENGINE_PS3_CORE_FAILURE_POINT was defined for a build with no generated Core"
+#endif
+
 /// Declares the PPU process parameters read by GameOS: normal priority (1001) and a 1 MiB main stack.
 SYS_PROCESS_PARAM(1001, 0x100000)
 
@@ -20,5 +29,12 @@ int main() {
     options.FixedPoseRadians = static_cast<float>(HELENGINE_PS3_FIXED_POSE_RADIANS);
     options.RunSeconds = static_cast<unsigned>(HELENGINE_PS3_RUN_SECONDS);
     options.FailurePoint = static_cast<unsigned>(HELENGINE_PS3_FAILURE_POINT);
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+    options.CoreEnabled = true;
+    options.CoreFailurePoint = static_cast<unsigned>(HELENGINE_PS3_CORE_FAILURE_POINT);
+#else
+    options.CoreEnabled = false;
+    options.CoreFailurePoint = 0;
+#endif
     return helengine::ps3::Ps3BootHost::Run(options);
 }

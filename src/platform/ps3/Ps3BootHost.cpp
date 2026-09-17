@@ -12,6 +12,10 @@
 #include "platform/ps3/Ps3RasterRenderer.hpp"
 #include "platform/ps3/Ps3Video.hpp"
 
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+#include "platform/ps3/Ps3RuntimeHost.hpp"
+#endif
+
 namespace helengine::ps3 {
     volatile bool Ps3BootHost::ExitRequested = false;
 
@@ -48,6 +52,8 @@ namespace helengine::ps3 {
     int Ps3BootHost::Run(const Ps3RunOptions& options) {
         std::printf("PS3_BOOT clearOnly=%d fixedPose=%d fixedPoseRadians=%.4f runSeconds=%u failurePoint=%u\n",
                     options.ClearOnly ? 1 : 0, options.FixedPose ? 1 : 0, static_cast<double>(options.FixedPoseRadians), options.RunSeconds, options.FailurePoint);
+        std::printf("PS3_BOOT_CORE coreEnabled=%d coreFailurePoint=%u\n",
+                    options.CoreEnabled ? 1 : 0, options.CoreFailurePoint);
         ExitRequested = false;
         const s32 callbackResult = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT0, HandleSystemEvent, nullptr);
         if (callbackResult != 0) {
@@ -57,6 +63,12 @@ namespace helengine::ps3 {
 
         Ps3Video video;
         Ps3RasterRenderer renderer;
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        // Declared alongside video and renderer so the ordered shutdown below owns its
+        // disposal, rather than leaving it to a destructor that runs after video teardown.
+        Ps3RuntimeHost runtimeHost;
+        bool coreReady = false;
+#endif
         bool failed = false;
         bool videoReady = false;
         bool rendererReady = false;
@@ -87,6 +99,28 @@ namespace helengine::ps3 {
             failed = true;
             exitReason = "deliberate-failure-after-renderer";
         }
+
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        // Core starts after video and the cube renderer, so a Core failure is never
+        // confused with a video or renderer failure, and the cube keeps drawing either way.
+        if (!failed && options.CoreEnabled) {
+            if (options.CoreFailurePoint == 2) {
+                runtimeHost.ArmDeliberateDrawFailure();
+            }
+            if (!runtimeHost.Initialize(video)) {
+                failed = true;
+                exitReason = "core-initialization-failed";
+            } else {
+                coreReady = true;
+            }
+        }
+        if (!failed && coreReady && options.CoreFailurePoint == 1) {
+            std::printf("PS3_FAILURE_POINT stage=AfterCoreInitialize\n");
+            runtimeHost.FailDeliberately("AfterCoreInitialize");
+            failed = true;
+            exitReason = "deliberate-failure-after-core-initialize";
+        }
+#endif
 
         if (!failed) {
             const s64 startMicroseconds = sysGetSystemTime();
@@ -152,11 +186,36 @@ namespace helengine::ps3 {
                         break;
                     }
                 }
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+                // Core advances and draws within the frame the cube already rendered into.
+                // Its adapters present nothing at this milestone, so the cube is unaffected.
+                if (coreReady) {
+                    if (!runtimeHost.Update(static_cast<double>(stepSeconds))) {
+                        failed = true;
+                        exitReason = "core-update-failed";
+                        break;
+                    }
+                    if (!runtimeHost.Draw()) {
+                        failed = true;
+                        exitReason = "core-draw-failed";
+                        break;
+                    }
+                }
+#endif
                 if (!video.Present()) {
                     failed = true;
                     exitReason = "present-failed";
                     break;
                 }
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+                // The boundary closes after presentation, matching the engine contract that
+                // a frame ends once its image has been handed to the display.
+                if (coreReady && !runtimeHost.CompleteFrameBoundary()) {
+                    failed = true;
+                    exitReason = "core-frame-boundary-failed";
+                    break;
+                }
+#endif
                 if (nowMicroseconds >= nextStatisticsMicroseconds) {
                     nextStatisticsMicroseconds += static_cast<s64>(StatisticsIntervalSeconds) * 1000000;
                     std::printf("PS3_FRAME_STATS frames=%u draws=%u elapsedMilliseconds=%lld pose=%.3f videoOwnedBytes=%u rendererOwnedBytes=%u commandOffset=0x%X\n",
@@ -167,6 +226,21 @@ namespace helengine::ps3 {
         }
 
         std::printf("PS3_EXIT reason=%s failed=%d frames=%u draws=%u\n", exitReason, failed ? 1 : 0, video.PresentedFrameCount(), renderer.DrawCount());
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        // Core is disposed before the GPU is drained, so its release path never depends on
+        // video teardown having succeeded.
+        if (options.CoreEnabled) {
+            const bool coreDisposed = runtimeHost.Shutdown();
+            if (!coreDisposed) {
+                failed = true;
+            }
+            std::printf("PS3_CORE_EXIT disposed=%d stage=%u error=%u frames=%u\n",
+                        coreDisposed ? 1 : 0,
+                        static_cast<unsigned>(runtimeHost.Stage()),
+                        static_cast<unsigned>(runtimeHost.Error()),
+                        runtimeHost.FrameCount());
+        }
+#endif
         bool drained = false;
         if (videoReady) {
             drained = video.Drain();

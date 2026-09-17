@@ -13,7 +13,7 @@ namespace helengine::ps3 {
         /// missing pipeline from looking like a blank overlay.
         [[noreturn]] void RefuseUnsupported(const char* stage) {
             std::printf("PS3_CORE_ERROR stage=%s reason=not-supported-in-v02-boot-gate\n", stage);
-            he_cpp_raise(::NotSupportedException(
+            he_cpp_raise(new ::NotSupportedException(
                 "The PlayStation 3 v0.2 boot gate has no 2D pipeline. Overlay rendering arrives with a later milestone."));
         }
     }

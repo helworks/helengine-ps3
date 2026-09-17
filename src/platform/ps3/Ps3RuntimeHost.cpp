@@ -6,10 +6,14 @@
 #include <exception>
 #include <malloc.h>
 #include <new>
+#include <string>
+#include <utility>
 
 #include "Core.hpp"
+#include "CoreInitializationOptions.hpp"
 #include "PlatformInfo.hpp"
 
+#include "platform/ps3/Ps3ContentStreamSource.hpp"
 #include "platform/ps3/Ps3InputBackend.hpp"
 #include "platform/ps3/Ps3RenderManager2D.hpp"
 #include "platform/ps3/Ps3RenderManager3D.hpp"
@@ -26,6 +30,40 @@ namespace helengine::ps3 {
         std::uint32_t FreeHeapBytes() {
             const struct mallinfo information = mallinfo();
             return static_cast<std::uint32_t>(information.fordblks);
+        }
+
+        /// Outcome of one guarded call into generated code.
+        struct GuardedResult {
+            /// True when the call returned without raising.
+            bool Succeeded;
+
+            /// Why the call failed. Meaningful only when Succeeded is false.
+            std::string Detail;
+        };
+
+        /// Runs one call into generated code and captures whatever it raises.
+        ///
+        /// Generated code raises by pointer, as in throw new ArgumentNullException(...),
+        /// which a std::exception reference never matches. Catching only that reference
+        /// would send every generated failure to the catch-all and discard its message,
+        /// so both shapes are handled here. The pointer form is deleted once its message
+        /// has been copied, so reporting a failure does not also leak its cause.
+        template <typename TCall>
+        GuardedResult Guard(TCall&& call) {
+            try {
+                call();
+                return GuardedResult{ true, std::string() };
+            } catch (::Exception* error) {
+                std::string detail = error == nullptr
+                    ? std::string("a null exception pointer was raised")
+                    : std::string(error->what());
+                delete error;
+                return GuardedResult{ false, std::move(detail) };
+            } catch (const std::exception& error) {
+                return GuardedResult{ false, std::string(error.what()) };
+            } catch (...) {
+                return GuardedResult{ false, std::string("an exception of an unrecognized type") };
+            }
         }
 
         /// Human-readable stage name for the log.
@@ -49,10 +87,13 @@ namespace helengine::ps3 {
         , RenderManager3DInstance(nullptr)
         , RenderManager2DInstance(nullptr)
         , InputBackendInstance(nullptr)
+        , ContentStreamSourceInstance(nullptr)
+        , InitializationOptionsInstance(nullptr)
         , StageValue(Ps3CoreStage::Booting)
         , ErrorValue(Ps3CoreError::None)
         , FrameCounter(0)
-        , ShutdownDone(false) {
+        , ShutdownDone(false)
+        , ArmDrawFailure(false) {
         volatile Ps3CoreProbeSnapshot& snapshot = helengine_ps3_core_probe;
         snapshot.Magic = Ps3CoreProbeMagic;
         snapshot.Version = Ps3CoreProbeVersion;
@@ -72,6 +113,14 @@ namespace helengine::ps3 {
         }
     }
 
+    void Ps3RuntimeHost::ArmDeliberateDrawFailure() {
+        ArmDrawFailure = true;
+    }
+
+    void Ps3RuntimeHost::FailDeliberately(const char* stageName) {
+        Fail(Ps3CoreError::DeliberateFailurePoint, stageName, "the build requested a deliberate stop");
+    }
+
     void Ps3RuntimeHost::EnterStage(Ps3CoreStage stage) {
         StageValue = stage;
         helengine_ps3_core_probe.Stage = static_cast<std::uint32_t>(stage);
@@ -86,27 +135,27 @@ namespace helengine::ps3 {
     }
 
     bool Ps3RuntimeHost::Initialize(Ps3Video& video) {
-        try {
+        const GuardedResult adapters = Guard([this] {
             RenderManager3DInstance = new Ps3RenderManager3D();
             RenderManager2DInstance = new Ps3RenderManager2D();
             InputBackendInstance = new Ps3InputBackend();
             PlatformInfoInstance = new ::PlatformInfo(std::string("PlayStation 3"), std::string("0.2.0"));
-        } catch (const std::exception& error) {
-            Fail(Ps3CoreError::AdapterConstruction, "AdapterConstruction", error.what());
+            ContentStreamSourceInstance = new Ps3ContentStreamSource();
+            InitializationOptionsInstance = new ::CoreInitializationOptions();
+            InitializationOptionsInstance->set_ContentStreamSource(ContentStreamSourceInstance);
+        });
+        if (!adapters.Succeeded) {
+            Fail(Ps3CoreError::AdapterConstruction, "AdapterConstruction", adapters.Detail.c_str());
             return false;
-        } catch (...) {
-            Fail(Ps3CoreError::AdapterConstruction, "AdapterConstruction", "unknown exception");
-            return false;
+        }
+        if (ArmDrawFailure) {
+            RenderManager3DInstance->ArmDeliberateRaise();
         }
         EnterStage(Ps3CoreStage::AdaptersReady);
 
-        try {
-            CoreInstance = new ::Core();
-        } catch (const std::exception& error) {
-            Fail(Ps3CoreError::CoreConstruction, "CoreConstruction", error.what());
-            return false;
-        } catch (...) {
-            Fail(Ps3CoreError::CoreConstruction, "CoreConstruction", "unknown exception");
+        const GuardedResult construction = Guard([this] { CoreInstance = new ::Core(); });
+        if (!construction.Succeeded) {
+            Fail(Ps3CoreError::CoreConstruction, "CoreConstruction", construction.Detail.c_str());
             return false;
         }
         EnterStage(Ps3CoreStage::CoreConstructed);
@@ -117,13 +166,11 @@ namespace helengine::ps3 {
         std::printf("PS3_CORE_DISPLAY width=%u height=%u aspect=%.4f\n",
                     video.Width(), video.Height(), static_cast<double>(video.Aspect()));
 
-        try {
-            CoreInstance->Initialize(RenderManager3DInstance, RenderManager2DInstance, InputBackendInstance, PlatformInfoInstance);
-        } catch (const std::exception& error) {
-            Fail(Ps3CoreError::CoreInitialization, "CoreInitialization", error.what());
-            return false;
-        } catch (...) {
-            Fail(Ps3CoreError::CoreInitialization, "CoreInitialization", "unknown exception");
+        const GuardedResult initialization = Guard([this] {
+            CoreInstance->Initialize(RenderManager3DInstance, RenderManager2DInstance, InputBackendInstance, PlatformInfoInstance, InitializationOptionsInstance);
+        });
+        if (!initialization.Succeeded) {
+            Fail(Ps3CoreError::CoreInitialization, "CoreInitialization", initialization.Detail.c_str());
             return false;
         }
 
@@ -138,13 +185,9 @@ namespace helengine::ps3 {
             Fail(Ps3CoreError::FrameUpdate, "Update", "core is not initialized");
             return false;
         }
-        try {
-            CoreInstance->Update(elapsedSeconds);
-        } catch (const std::exception& error) {
-            Fail(Ps3CoreError::FrameUpdate, "Update", error.what());
-            return false;
-        } catch (...) {
-            Fail(Ps3CoreError::FrameUpdate, "Update", "unknown exception");
+        const GuardedResult update = Guard([this, elapsedSeconds] { CoreInstance->Update(elapsedSeconds); });
+        if (!update.Succeeded) {
+            Fail(Ps3CoreError::FrameUpdate, "Update", update.Detail.c_str());
             return false;
         }
         return true;
@@ -155,13 +198,9 @@ namespace helengine::ps3 {
             Fail(Ps3CoreError::FrameDraw, "Draw", "core is not initialized");
             return false;
         }
-        try {
-            CoreInstance->Draw();
-        } catch (const std::exception& error) {
-            Fail(Ps3CoreError::FrameDraw, "Draw", error.what());
-            return false;
-        } catch (...) {
-            Fail(Ps3CoreError::FrameDraw, "Draw", "unknown exception");
+        const GuardedResult draw = Guard([this] { CoreInstance->Draw(); });
+        if (!draw.Succeeded) {
+            Fail(Ps3CoreError::FrameDraw, "Draw", draw.Detail.c_str());
             return false;
         }
         return true;
@@ -172,13 +211,9 @@ namespace helengine::ps3 {
             Fail(Ps3CoreError::FrameBoundary, "CompleteFrameBoundary", "core is not initialized");
             return false;
         }
-        try {
-            CoreInstance->CompleteFrameBoundary();
-        } catch (const std::exception& error) {
-            Fail(Ps3CoreError::FrameBoundary, "CompleteFrameBoundary", error.what());
-            return false;
-        } catch (...) {
-            Fail(Ps3CoreError::FrameBoundary, "CompleteFrameBoundary", "unknown exception");
+        const GuardedResult boundary = Guard([this] { CoreInstance->CompleteFrameBoundary(); });
+        if (!boundary.Succeeded) {
+            Fail(Ps3CoreError::FrameBoundary, "CompleteFrameBoundary", boundary.Detail.c_str());
             return false;
         }
 
@@ -197,6 +232,12 @@ namespace helengine::ps3 {
     }
 
     void Ps3RuntimeHost::ReleaseAdapters() {
+        // The options object only borrows the content source, so the source outlives it and
+        // is released afterwards.
+        delete InitializationOptionsInstance;
+        InitializationOptionsInstance = nullptr;
+        delete ContentStreamSourceInstance;
+        ContentStreamSourceInstance = nullptr;
         delete PlatformInfoInstance;
         PlatformInfoInstance = nullptr;
         delete InputBackendInstance;
@@ -215,13 +256,9 @@ namespace helengine::ps3 {
 
         bool disposed = true;
         if (CoreInstance != nullptr) {
-            try {
-                CoreInstance->Dispose();
-            } catch (const std::exception& error) {
-                Fail(Ps3CoreError::CoreDisposal, "Dispose", error.what());
-                disposed = false;
-            } catch (...) {
-                Fail(Ps3CoreError::CoreDisposal, "Dispose", "unknown exception");
+            const GuardedResult disposal = Guard([this] { CoreInstance->Dispose(); });
+            if (!disposal.Succeeded) {
+                Fail(Ps3CoreError::CoreDisposal, "Dispose", disposal.Detail.c_str());
                 disposed = false;
             }
             delete CoreInstance;
