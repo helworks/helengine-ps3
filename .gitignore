@@ -13,3 +13,8 @@
 build-manifest.json
 tests/native/*.exe
 tests/native/*.out
+
+# Managed builder assembly outputs. The builder's sources are tracked; everything MSBuild
+# produces from them is not.
+bin/
+obj/

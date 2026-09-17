@@ -1,0 +1,6 @@
+{
+  "platformId": "ps3",
+  "displayName": "PlayStation 3",
+  "builderAssemblyPath": "builder/bin/Release/net9.0/helengine.ps3.builder.dll",
+  "definitionFactoryType": "helengine.ps3.builder.Ps3PlatformDefinitionFactory"
+}
