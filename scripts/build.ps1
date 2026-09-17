@@ -18,14 +18,18 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
     [string]$BuildId,
-    [ValidateSet('Clear','Cube')][string]$Mode = 'Cube',
+    [ValidateSet('Clear','Cube','Core')][string]$Mode = 'Cube',
     [switch]$FixedPose,
     [ValidateRange(0,3600)][int]$RunSeconds = 0,
     [ValidateSet('None','AfterVideo','AfterRenderer')]
     [string]$FailurePoint = 'None',
     [string]$OutputRoot = 'C:\dev\helworks\builds\helengine-ps3',
-    [ValidateRange(0.0, 6.2832)][double]$FixedPoseRadians = 0.6
+    [ValidateRange(0.0, 6.2832)][double]$FixedPoseRadians = 0.6,
+    [string]$GeneratedCoreRoot = ''
 )
+# GeneratedCoreRoot is the root of a generated Core C++ tree produced by the platform
+# build. It is required by Core mode and refused by every other mode, so a build can never
+# silently ignore a generated tree the caller expected to be compiled in.
 # FixedPoseRadians is a documented diagnostic: it only applies with -FixedPose and lets
 # known orientations (0, pi/2, pi) be built for depth/culling checks. 0.6 is the
 # documented fixed pose of the final build interface.
@@ -127,9 +131,38 @@ if ($libCgHash -ne $shaderToolkit.LibCgSha256) {
 }
 $lockHash = Get-FileSha256 $lockPath
 
+# --- Generated Core root ----------------------------------------------------------------
+# Validated before anything is created, so an unusable request never leaves a half-built
+# directory behind and never reaches a container.
+$generatedCoreUnityName = ''
+if ($Mode -eq 'Core') {
+    if ([string]::IsNullOrWhiteSpace($GeneratedCoreRoot)) {
+        throw 'Core mode requires -GeneratedCoreRoot naming a generated Core C++ tree.'
+    }
+    $GeneratedCoreRoot = [IO.Path]::GetFullPath($GeneratedCoreRoot)
+    if (-not (Test-Path -LiteralPath $GeneratedCoreRoot -PathType Container)) {
+        throw "Generated Core root does not exist: $GeneratedCoreRoot"
+    }
+    # The editor writes a merged unity translation unit; a single-project codegen run writes
+    # the raw one. Either is acceptable, but one of them must be present or there is nothing
+    # to compile and the failure would otherwise surface obscurely inside make.
+    foreach ($candidate in @('helengine_core_unity.cpp', 'generated_unity.cpp')) {
+        if (Test-Path -LiteralPath (Join-Path $GeneratedCoreRoot $candidate) -PathType Leaf) {
+            $generatedCoreUnityName = $candidate
+            break
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($generatedCoreUnityName)) {
+        throw "Generated Core root contains no unity translation unit (helengine_core_unity.cpp or generated_unity.cpp): $GeneratedCoreRoot"
+    }
+} elseif (-not [string]::IsNullOrWhiteSpace($GeneratedCoreRoot)) {
+    throw "-GeneratedCoreRoot is only valid in Core mode; this build requested mode '$Mode'."
+}
+
 # --- Explicit compile definitions -----------------------------------------------------
 $defines = [Collections.Generic.List[string]]::new()
 if ($Mode -eq 'Clear') { $defines.Add('-DHELENGINE_PS3_CLEAR_ONLY=1') } else { $defines.Add('-DHELENGINE_PS3_CLEAR_ONLY=0') }
+if ($Mode -eq 'Core') { $defines.Add('-DHELENGINE_PS3_HAS_GENERATED_CORE=1') }
 if ($FixedPose) { $defines.Add('-DHELENGINE_PS3_FIXED_POSE=1') } else { $defines.Add('-DHELENGINE_PS3_FIXED_POSE=0') }
 $defines.Add("-DHELENGINE_PS3_RUN_SECONDS=$RunSeconds")
 $defines.Add('-DHELENGINE_PS3_FIXED_POSE_RADIANS=' + $FixedPoseRadians.ToString('0.0####', [Globalization.CultureInfo]::InvariantCulture) + 'f')
@@ -145,12 +178,22 @@ $sourceDirty = @($sourceStatus | Where-Object { -not [string]::IsNullOrWhiteSpac
 # --- Native build in the locked image --------------------------------------------------
 New-Item -ItemType Directory -Path $buildRoot | Out-Null
 $buildLogPath = Join-Path $buildRoot 'build.log'
-$innerCommand = "set -e; make -f /src/Makefile SRC_ROOT=/src BUILD_ROOT=/out HELENGINE_DEFINES='$definesText' -j8 all"
+$makeArguments = "SRC_ROOT=/src BUILD_ROOT=/out MODE=$Mode HELENGINE_DEFINES='$definesText'"
+if ($Mode -eq 'Core') {
+    $makeArguments = "$makeArguments GENERATED_CORE_ROOT=/generated"
+}
+$innerCommand = "set -e; make -f /src/Makefile $makeArguments -j8 all"
 $dockerArgs = @(
     'run', '--rm', '--network', 'none',
     '--mount', "type=bind,source=$repoRoot,target=/src,readonly",
     '--mount', "type=bind,source=$buildRoot,target=/out",
-    '--mount', "type=bind,source=$cgMountSource,target=$($shaderToolkit.MountTarget),readonly",
+    '--mount', "type=bind,source=$cgMountSource,target=$($shaderToolkit.MountTarget),readonly"
+)
+if ($Mode -eq 'Core') {
+    # Read-only: the generated tree is an input and is never edited after generation.
+    $dockerArgs += @('--mount', "type=bind,source=$GeneratedCoreRoot,target=/generated,readonly")
+}
+$dockerArgs += @(
     '--workdir', '/out',
     '--entrypoint', '/bin/bash',
     $imageId,
@@ -206,6 +249,26 @@ foreach ($artifactName in ($requiredArtifacts + $shaderArtifacts)) {
     }
 }
 
+# --- Generated Core fingerprint ------------------------------------------------------------
+# One hash over every generated source path and content, so an executable can be traced back
+# to the exact tree it was compiled from. Computed after the build, because a tree that
+# changed mid-build would otherwise be attributed to the artifact incorrectly.
+$generatedCoreFingerprint = ''
+$generatedCoreFileCount = 0
+if ($Mode -eq 'Core') {
+    $generatedFiles = @(Get-ChildItem -LiteralPath $GeneratedCoreRoot -File -Recurse | Sort-Object FullName)
+    $generatedCoreFileCount = $generatedFiles.Count
+    $generatedLines = @(
+        foreach ($generatedFile in $generatedFiles) {
+            $relativePath = [IO.Path]::GetRelativePath($GeneratedCoreRoot, $generatedFile.FullName).Replace('\', '/')
+            "$relativePath=$((Get-FileHash -LiteralPath $generatedFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+        }
+    )
+    $generatedCoreFingerprint = [Convert]::ToHexString(
+        [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($generatedLines -join "`n"))).ToLowerInvariant()
+    Set-Content -LiteralPath (Join-Path $buildRoot 'generated-core-hashes.txt') -Value $generatedLines -Encoding UTF8
+}
+
 # --- Success manifest: temporary name first, then rename ---------------------------------
 $manifest = [PSCustomObject]@{
     SchemaVersion = 1
@@ -218,6 +281,10 @@ $manifest = [PSCustomObject]@{
     FailurePoint = $FailurePoint
     FixedPoseRadians = $FixedPoseRadians
     ToolchainLockSha256 = $lockHash
+    GeneratedCoreRoot = $GeneratedCoreRoot
+    GeneratedCoreUnity = $generatedCoreUnityName
+    GeneratedCoreSha256 = $generatedCoreFingerprint
+    GeneratedCoreFileCount = $generatedCoreFileCount
     ImageId = $imageId
     LaunchArtifact = $launchArtifactName
     Artifacts = $artifactRecords

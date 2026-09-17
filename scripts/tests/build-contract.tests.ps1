@@ -118,7 +118,13 @@ $originalPath = $env:PATH
 $env:PATH = "$fakeDockerDirectory;$originalPath"
 
 function Assert-Rejected {
-    param([string]$Name, [scriptblock]$Action)
+    <#
+        Asserts that an action was rejected, and optionally that it was rejected for the
+        stated reason. Without ExpectedMessage a case passes on any rejection, which can
+        hide a call that failed for an unrelated reason such as a parameter-binding error
+        rather than the validation under test.
+    #>
+    param([string]$Name, [scriptblock]$Action, [string]$ExpectedMessage = '')
     $rejected = $false
     $message = ''
     try {
@@ -134,6 +140,10 @@ function Assert-Rejected {
     if (Test-Path -LiteralPath $fakeLaunchMarker) {
         $failures.Add("$Name : emulator launched before validation.")
         Remove-Item -LiteralPath $fakeLaunchMarker -Force
+        return
+    }
+    if (-not [string]::IsNullOrEmpty($ExpectedMessage) -and $message -notmatch $ExpectedMessage) {
+        $failures.Add("$Name was rejected for the wrong reason. Expected a message matching '$ExpectedMessage' but got: $message")
         return
     }
     $passes.Add("$Name rejected: $message")
@@ -156,6 +166,23 @@ try {
     Assert-Rejected 'Nonzero build' { & $buildScript -BuildId 'fail-01' -Mode Clear -OutputRoot $outputRoot }
     Assert-True 'Nonzero build left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'fail-01\build-manifest.json')))
     Assert-True 'Nonzero build kept its log' ((Test-Path -LiteralPath (Join-Path $outputRoot 'fail-01\build.log')) -and ((Get-Content -LiteralPath (Join-Path $outputRoot 'fail-01\build.log') -Raw) -match 'simulated compiler error'))
+
+    # Core mode must reject a generated-core root that does not exist, before any container
+    # starts. A missing root would otherwise surface as an obscure failure inside make.
+    # Each expectation names the reason, so a case cannot pass because the parameter failed
+    # to bind or because an unrelated error happened to be thrown first.
+    $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
+    Assert-Rejected 'Core mode without generated root' { & $buildScript -BuildId 'core-missing-01' -Mode Core -GeneratedCoreRoot (Join-Path $testsRoot 'absent-core') -OutputRoot $outputRoot } 'Generated Core root'
+    Assert-True 'Core mode without generated root left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'core-missing-01\build-manifest.json')))
+
+    # A generated root that exists but holds no unity translation unit is equally invalid.
+    $emptyCoreRoot = Join-Path $testsRoot 'empty-core'
+    New-Item -ItemType Directory -Path $emptyCoreRoot -Force | Out-Null
+    Assert-Rejected 'Core mode without a unity source' { & $buildScript -BuildId 'core-empty-01' -Mode Core -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'unity'
+    Assert-True 'Core mode without a unity source left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'core-empty-01\build-manifest.json')))
+
+    # The parameter is meaningless outside Core mode and must be refused rather than ignored.
+    Assert-Rejected 'Generated root outside Core mode' { & $buildScript -BuildId 'core-misuse-01' -Mode Cube -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'only valid in Core mode'
 
     # Zero-byte output is rejected even though the container exited zero.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'zero-elf'
