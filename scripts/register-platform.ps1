@@ -31,6 +31,10 @@ Set-StrictMode -Version Latest
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $settingsRoot = Join-Path ([IO.Path]::GetFullPath($ExternalRoot)) 'user-settings'
 $manifestPath = Join-Path $settingsRoot 'platforms.json'
+# Pinned explicitly rather than left to the editor's default, so the regenerated tree lands
+# somewhere known and can be compiled directly by scripts/build.ps1 -Mode Core without
+# hunting through build caches for it.
+$generatedCoreRoot = Join-Path ([IO.Path]::GetFullPath($ExternalRoot)) 'generated-core'
 $builderAssembly = Join-Path $repoRoot "builder\bin\$Configuration\net9.0\helengine.ps3.builder.dll"
 $pluginManifest = Join-Path $repoRoot 'platform-plugin.json'
 
@@ -78,6 +82,7 @@ $manifest = [PSCustomObject]@{
             displayName = 'PlayStation 3'
             builderAssemblyPath = $builderAssembly
             playerSourceRootPath = $repoRoot
+            generatedCoreCppRootPath = $generatedCoreRoot
             pluginManifestPath = $pluginManifest
         }
     )
@@ -89,6 +94,7 @@ Write-Output "  engineVersion        $requiredEngineVersion  (from $ProjectFile)
 Write-Output "  builderAssemblyPath  $builderAssembly"
 Write-Output "  builder built        $builderWriteTime UTC"
 Write-Output "  playerSourceRootPath $repoRoot"
+Write-Output "  generatedCoreCppRoot $generatedCoreRoot"
 Write-Output ''
 Write-Output 'Set these before running the platform build:'
 Write-Output "  `$env:HELENGINE_ENGINE_USER_SETTINGS_ROOT = '$settingsRoot'"

@@ -61,8 +61,13 @@ public static class Ps3PlatformDefinitionFactory {
             [new PlatformAssetRequirementDefinition("scene", "Scene", true, ["helen"])],
             [],
             [
-                new PlatformComponentSupportRule("helengine.meshcomponent", PlatformComponentSupportKind.Unsupported, "The v0.2 boot gate renders no authored geometry.", "Authored meshes arrive with the scene milestone."),
-                new PlatformComponentSupportRule("helengine.cameracomponent", PlatformComponentSupportKind.Unsupported, "The v0.2 boot gate renders no authored camera.", "Authored cameras arrive with the scene milestone.")
+                // Packaged so scenes cook, but not drawn. The v0.2 boot gate runs Core against
+                // an empty scene, so these records travel through the build unrendered rather
+                // than blocking it. Marking them unsupported instead makes scene packaging
+                // refuse the project outright, which is a build-time failure the gate does not
+                // need. The renderer adapters still refuse any draw request loudly at run time.
+                new PlatformComponentSupportRule("helengine.meshcomponent", PlatformComponentSupportKind.Transform, "Packaged but not rendered: the v0.2 boot gate draws no authored geometry.", string.Empty),
+                new PlatformComponentSupportRule("helengine.cameracomponent", PlatformComponentSupportKind.Transform, "Packaged but not rendered: the v0.2 boot gate draws no authored camera.", string.Empty)
             ],
             [codegen],
             [new PlatformStorageProfileDefinition("loose-files", "Loose Files", PlatformStorageProfileKind.LooseFiles, "ps3-loose-files", false)],
