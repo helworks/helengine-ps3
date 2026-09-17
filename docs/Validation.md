@@ -80,6 +80,77 @@ Repeated short build/run cycles during the session: `pose-0-01`, `pose-halfpi-01
 `pose-pi-01` (three fresh builds, three runs, 480 frames each, exit 0) plus
 `cube-fixed-04` and `cube-rot-02`; all exited normally.
 
+## v0.2 acceptance matrix (generated Core boot gate)
+
+Same environment as above, same pinned image
+`sha256:b19ffd3cfb54c04835a0e32989dfa59205764802469a2faa89aa2519734b8b3f`, toolchain lock
+`bfa8e28c477187091d5b8ef64a94fadb7158538793e6cf314825fca6d467db79`. The generated Core
+tree under test is the snapshot `generated-core-snapshot-20260917-160012`, 772 files,
+content fingerprint `1c0ee6504151029fd51699ab58d4c54cee350f8d5c3c8b6f0b9f3fd17eb4e079`,
+unity translation unit `helengine_core_unity.cpp`.
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Core ABI | Passed | `docs\CoreAbiProbe.md`: pointer 8 bytes, long 8, size_t 8, big-endian confirmed three ways and cross-checked against the ELF header; exceptions unwind and `dynamic_cast` resolves at run time on GameOS |
+| Compiles | Passed | `core-boot-05\build.log`: 338 generated sources as one unity translation unit, 0 separate units, 0 errors, 62 warnings, `generated-overlap.txt` empty |
+| Links | Passed | `core-boot-05\`: ELF 17,181,167 bytes, SELF 765,408 bytes, map 3,742,426 bytes |
+| Initializes | Passed | `core-boot-05\emulator-runs\20260917-173747\TTY.log`: `PS3_CORE_READY`, stages AdaptersReady, CoreConstructed, CoreInitialized |
+| Runs | Passed | Same log: 719 complete update/draw/frame-boundary cycles in 12 s; Core drove the 3D render manager 719 times; the v0.1 cube kept drawing throughout (`PS3_FRAME_PROBE` blue center) |
+| Unwinds | Passed | `core-unwind-02\emulator-runs\20260917-174953\TTY.log`: a raise from the native 3D adapter travelled back through generated `Core::Draw` frames and was caught at the host boundary with its message intact, then Core disposed and the process exited 1 |
+| Disposes | Passed | `core-boot-05` log: `PS3_CORE_DISPOSED frames=719`, then CleanShutdown, then the unchanged v0.1 drain and shutdown, exit 0 |
+| Deliberate failure | Passed | `core-fail-01\emulator-runs\20260917-174512\TTY.log`: stage AfterCoreInitialize, code 8, Core still disposed, exit 1 |
+| v0.1 regression | Passed | `v01-regression-01\emulator-runs\20260917-175038\TTY.log`: `coreEnabled=0`, no Core stages, 598 frames in 10 s, exit 0 |
+| Build safety | Passed | `scripts\tests\build-contract.tests.ps1`: 42 checks, including that `-CoreFailurePoint` is refused outside Core mode and that a successful Core build records it |
+| End-to-end editor build | Not passed | Codegen completes, then material cooking fails with "Shader asset id is required". Recorded as a known gap below |
+| Hardware | Not attempted | No PS3 hardware was used |
+
+### Heap accounting
+
+Free heap in bytes, from `mallinfo().fordblks`, in the passing run:
+
+| Point | Free bytes |
+|---|---|
+| Adapters constructed, before Core | 1,055,296 |
+| Core constructed | 1,053,232 |
+| Core initialized | 1,045,552 |
+| Core disposed | 1,046,048 |
+| Adapters released, clean shutdown | 1,046,496 |
+
+Disposal returns what Core allocated across 719 frames: free heap after disposal exceeds
+the value at initialization. About 8,800 bytes are not returned relative to the
+pre-Core figure. `fordblks` counts free-block bytes, so fragmentation alone can account
+for that; this is reported as measured and is not claimed to be leak-free.
+
+### Findings worth keeping (v0.2)
+
+- **Generated code raises by pointer.** The generated tree throws `new SomeException(...)`
+  at 581 of its 741 throw sites. A `catch` on a `std::exception` reference
+  never matches those, so the first boundary caught every generated failure as an unknown
+  type and discarded its message. The host now catches the pointer form first, reads the
+  message, and deletes it. The gate's first real error message, "ContentStreamSource must
+  be provided.", only became visible after that change.
+- **Core requires a content stream source.** `CoreInitializationOptions::Normalize`
+  rejects a null content source, even for a run that reads no content. Every other option
+  has a usable default. The host supplies `Ps3ContentStreamSource` through the options
+  overload of `Initialize`.
+- **Core never calls the 2D render manager for an empty scene.** The unwinding gate first
+  armed its raise in the 2D adapter's draw and never fired; the log showed the 2D manager
+  at zero draws while the 3D manager had 360. The raise moved to the 3D adapter, which
+  Core drives every frame.
+- **Toolchain accommodations, all build-level.** Compiling the generated tree on the PPU
+  needed the GNU C++20 dialect (for `requires` expressions, and because strict ISO mode
+  hides newlib's POSIX declarations), `_GLIBCXX_USE_C99_MATH_TR1` to place 28 math
+  functions in `std`, a small header supplying five long-double functions newlib omits,
+  and `-isystem` so the project's `-Werror` does not apply to generated headers. No
+  generated file was modified.
+
+### Known gap
+
+The end-to-end path from the editor's platform build reaches code generation and then
+fails in material cooking with "Shader asset id is required". Code generation completes
+before that point, which is why the generated tree used above is a snapshot taken from a
+real run rather than a hand-made tree. Closing that path is not part of this milestone.
+
 ## Findings worth keeping
 
 - **PSL1GHT librsx wrap bug.** The pinned librsx keeps `context->current` cached across

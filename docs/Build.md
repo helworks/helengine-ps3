@@ -85,7 +85,7 @@ The SPU toolchain and SPU libraries are not built in v0.1; SPU work is deferred.
 ## 2. Native build
 
 ```powershell
-powershell -NoProfile -File scripts/build.ps1 -BuildId <id> [-Mode Clear|Cube] [-FixedPose] [-RunSeconds <0-3600>] [-FailurePoint None|AfterVideo|AfterRenderer]
+powershell -NoProfile -File scripts/build.ps1 -BuildId <id> [-Mode Clear|Cube|Core] [-FixedPose] [-RunSeconds <0-3600>] [-FailurePoint None|AfterVideo|AfterRenderer] [-GeneratedCoreRoot <path>] [-CoreFailurePoint None|AfterCoreInitialize|DuringCoreDraw]
 ```
 
 - `BuildId` names a fresh directory `C:\dev\helworks\builds\helengine-ps3\<id>`; an
@@ -98,6 +98,18 @@ powershell -NoProfile -File scripts/build.ps1 -BuildId <id> [-Mode Clear|Cube] [
   `HELENGINE_PS3_RUN_SECONDS`, `HELENGINE_PS3_FAILURE_POINT`); PS3 process arguments are not
   used. `-FixedPoseRadians` (default 0.6, the documented pose) is a diagnostic that only
   applies with `-FixedPose`.
+- `Core` mode additionally compiles a generated Core C++ tree into the same executable and
+  runs its lifecycle alongside the cube. It requires `-GeneratedCoreRoot` naming a tree that
+  holds a unity translation unit, and it is the only mode that accepts `-CoreFailurePoint`.
+  Both parameters are refused in every other mode rather than silently ignored. The tree is
+  compiled as its unity translation unit plus every generated source that unity file does
+  not include; `make` fails if any source would be compiled twice.
+- Core mode raises the language standard to `gnu++20` and enables exceptions and RTTI for
+  project code, so the two halves agree at the ABI boundary. Generated headers are included
+  with `-isystem` so the project's `-Werror` does not apply to them. Two newlib gaps are
+  closed at build level, never by editing generated files: `_GLIBCXX_USE_C99_MATH_TR1`
+  places 28 math functions in `std`, and `Ps3NewlibMathCompat.hpp` supplies five long-double
+  functions newlib omits, written against compiler builtins.
 - `Makefile` compiles `src/**.cpp` with `-std=c++17 -Wall -Wextra -Werror -mcpu=cell` plus
   the SDK `MACHDEP` flags, converts `shaders/*.vcg|*.fcg` with `cgcomp`, embeds the
   binaries with `bin2s`, links with the SDK C++ driver and writes a link map, then makes
