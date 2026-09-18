@@ -4,7 +4,11 @@
 
 #include <cstdint>
 
+#include <string>
+
 #include "RenderManager3D.hpp"
+
+class Asset;
 
 namespace helengine::ps3 {
     /// Minimal 3D render manager for the v0.2 Core boot gate.
@@ -37,6 +41,23 @@ namespace helengine::ps3 {
         /// gate's visible output is the v0.1 cube, drawn independently of Core.
         void Draw() override;
 
+        /// Builds a renderer material from one cooked platform payload.
+        /// @param materialAsset Cooked material Core is asking to realize.
+        /// @return An owned material carrying the cooked base colour.
+        ::RuntimeMaterial* BuildMaterialFromCooked(::PlatformMaterialAsset* materialAsset) override;
+
+        /// Reads one cooked material from content and realizes it.
+        /// @param cookedAssetPath Content-relative path to the cooked material.
+        /// @param contentStreamSource Source the path is resolved against.
+        /// @return An owned material carrying the cooked base colour.
+        ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
+
+        /// Reads one cooked model from content and realizes it.
+        /// @param cookedAssetPath Content-relative path to the cooked model.
+        /// @param contentStreamSource Source the path is resolved against.
+        /// @return An owned model, currently without GPU geometry.
+        ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
+
         /// Refuses model construction, which belongs to the authored scene milestone.
         /// @param data Raw model asset Core is asking to realize.
         /// @return Never returns normally.
@@ -54,6 +75,25 @@ namespace helengine::ps3 {
 
         /// Whether the build asked the next draw to raise, for the unwinding gate.
         bool RaiseOnDraw;
+
+        /// Whether the first cooked material has been reported.
+        bool LoggedFirstMaterial;
+
+        /// Whether the first cooked model has been reported.
+        bool LoggedFirstModel;
+
+        /// Number of cooked materials realized.
+        std::uint32_t MaterialCounter;
+
+        /// Number of cooked models realized.
+        std::uint32_t ModelCounter;
+
+        /// Reads one cooked asset through the content source and reports a clear reason on failure.
+        /// @param cookedAssetPath Content-relative path to the cooked asset.
+        /// @param contentStreamSource Source the path is resolved against.
+        /// @param kind Asset kind named in diagnostics.
+        /// @return The deserialized asset; never null.
+        static ::Asset* ReadCookedAsset(const std::string& cookedAssetPath, ::IContentStreamSource* contentStreamSource, const char* kind);
     };
 }
 

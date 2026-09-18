@@ -3,6 +3,7 @@
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
 
 #include <cstdint>
+#include <string>
 
 #include "RenderManager2D.hpp"
 #include "runtime/array.hpp"
@@ -29,6 +30,12 @@ namespace helengine::ps3 {
 
         /// Records the draw request and presents nothing.
         void Draw() override;
+
+        /// Accepts a cooked texture and returns an object with no GPU memory behind it.
+        /// @param cookedAssetPath Content-relative path to the cooked texture.
+        /// @param contentStreamSource Source the path would be resolved against.
+        /// @return An owned texture with no pixels.
+        ::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
 
         /// Returns a texture object with no GPU memory behind it.
         /// @param data Raw texture asset Core is asking to realize.

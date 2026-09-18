@@ -52,6 +52,16 @@ namespace helengine::ps3 {
         }
     }
 
+    ::RuntimeTexture* Ps3RenderManager2D::BuildTextureFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) {
+        (void)cookedAssetPath;
+        (void)contentStreamSource;
+        NoteFirstUse("BuildTextureFromCooked", LoggedBuildTexture);
+
+        // The cooked pixels are not read, because nothing samples them yet. The dimensions
+        // stay zero rather than guessed, so a later pipeline cannot inherit a made-up size.
+        return new ::RuntimeTexture();
+    }
+
     ::RuntimeTexture* Ps3RenderManager2D::BuildTextureFromRaw(::TextureAsset* data) {
         NoteFirstUse("BuildTextureFromRaw", LoggedBuildTexture);
 
