@@ -101,7 +101,7 @@ unity translation unit `helengine_core_unity.cpp`.
 | Deliberate failure | Passed | `core-fail-01\emulator-runs\20260917-174512\TTY.log`: stage AfterCoreInitialize, code 8, Core still disposed, exit 1 |
 | v0.1 regression | Passed | `v01-regression-01\emulator-runs\20260917-175038\TTY.log`: `coreEnabled=0`, no Core stages, 598 frames in 10 s, exit 0 |
 | Build safety | Passed | `scripts\tests\build-contract.tests.ps1`: 42 checks, including that `-CoreFailurePoint` is refused outside Core mode and that a successful Core build records it |
-| End-to-end editor build | Not passed | Codegen completes, then material cooking fails with "Shader asset id is required". Recorded as a known gap below |
+| End-to-end editor build | Passed | `platform-build-09`: the editor platform build ran codegen, packaged demodisc and produced `helengine_ps3.self` (824,080 bytes), exit 0. That artifact then ran 36,430 frames with Core driving every one, 33 ring wraps, no FIFO errors, and exited 0 on a window close (`core-07d11c3ad52a4a4db8677ea65353c6af\emulator-runs\20260918-001134\TTY.log`) |
 | Hardware | Not attempted | No PS3 hardware was used |
 
 ### Heap accounting
@@ -144,13 +144,24 @@ for that; this is reported as measured and is not claimed to be leak-free.
   and `-isystem` so the project's `-Werror` does not apply to generated headers. No
   generated file was modified.
 
-### Known gap
+### Closed gap: the editor path demanded a shader id PS3 never authors
 
-The end-to-end path from the editor's platform build reaches code generation and then
-fails in material cooking with "Shader asset id is required". Code generation completes
-before that point, which is why the generated tree used above is a snapshot taken from a
-real run rather than a hand-made tree. Closing that path is not part of this milestone.
+The end-to-end editor build first failed with "Shader asset id is required", which read as
+a shader problem but was not one. Scene packaging recorded a shader dependency for every
+material and took the id straight off the authored asset. That happens on the fallback
+used when a platform has no material builder, and the PS3 definition lands there because
+it declares no material schemas. Demodisc keeps each material's shader in a per-platform
+override file and has none for PS3, so the id was empty and the guard rejected it.
 
+Fixed in the engine repository, commit 609ec449, which records a dependency only when the
+material actually resolves an id, with a regression test that reproduced the exact
+exception beforehand. The generated tree used above is still the snapshot taken before
+that fix, so the compile and run evidence is unchanged.
+
+The PS3 definition remains inconsistent in a way worth closing separately: it declares
+CookedPlatformOwned material resolution while supplying no material schema, and its
+builder refuses every material cook request. Authored materials will need both before the
+scene milestone.
 ## Findings worth keeping
 
 - **PSL1GHT librsx wrap bug.** The pinned librsx keeps `context->current` cached across
