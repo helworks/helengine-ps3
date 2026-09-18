@@ -6,11 +6,15 @@
 
 #include <string>
 
+#include "IRenderVisitor3D.hpp"
 #include "RenderManager3D.hpp"
+#include "float4x4.hpp"
 
 class Asset;
 
 namespace helengine::ps3 {
+    class Ps3Video;
+
     /// Minimal 3D render manager for the v0.2 Core boot gate.
     ///
     /// The gate runs Core against an empty scene to prove the lifecycle, so this adapter
@@ -20,10 +24,15 @@ namespace helengine::ps3 {
     ///
     /// Only `BuildModelFromRaw` is abstract on the generated base; the overrides below are
     /// the subset the gate actually needs to control.
-    class Ps3RenderManager3D final : public ::RenderManager3D {
+    class Ps3RenderManager3D final : public ::RenderManager3D, public ::IRenderVisitor3D {
     public:
-        /// Creates an adapter that has drawn nothing yet.
-        Ps3RenderManager3D();
+        /// Creates an adapter bound to the video owner and raster renderer it draws through.
+        /// @param video Video owner supplying the display aspect. Must outlive this.
+        Ps3RenderManager3D(Ps3Video& video);
+
+        /// Draws one scene drawable the camera ordered.
+        /// @param drawable Drawable Core ordered for the active camera.
+        void Visit(::IDrawable3D* drawable) override;
 
         /// Counts how many times Core asked this manager to draw.
         std::uint32_t DrawCount() const;
@@ -87,6 +96,31 @@ namespace helengine::ps3 {
 
         /// Number of cooked models realized.
         std::uint32_t ModelCounter;
+
+        /// Video owner supplying the display aspect.
+        Ps3Video& Video;
+
+        /// View-projection for the camera being visited, valid only during Draw.
+        ::float4x4 ViewProjection;
+
+        /// Number of drawables visited during the most recent draw.
+        std::uint32_t VisitedDrawables;
+
+        /// Number of drawables actually submitted during the most recent draw.
+        std::uint32_t SubmittedDrawables;
+
+        /// Whether the camera and its queue were reported once already.
+        bool LoggedCamera;
+
+        /// Whether the first visited drawable was reported.
+        bool LoggedFirstVisit;
+
+        /// Reports why one frame or drawable was skipped, once per distinct reason.
+        /// @param marker Stable reason marker.
+        void NoteSkip(const char* marker);
+
+        /// Last skip marker reported, so the same reason is not logged every frame.
+        const char* LastSkipMarker;
 
         /// Reads one cooked asset through the content source and reports a clear reason on failure.
         /// @param cookedAssetPath Content-relative path to the cooked asset.

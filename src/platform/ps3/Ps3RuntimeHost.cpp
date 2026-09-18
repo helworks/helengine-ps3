@@ -139,8 +139,8 @@ namespace helengine::ps3 {
     }
 
     bool Ps3RuntimeHost::Initialize(Ps3Video& video) {
-        const GuardedResult adapters = Guard([this] {
-            RenderManager3DInstance = new Ps3RenderManager3D();
+        const GuardedResult adapters = Guard([this, &video] {
+            RenderManager3DInstance = new Ps3RenderManager3D(video);
             RenderManager2DInstance = new Ps3RenderManager2D();
             InputBackendInstance = new Ps3InputBackend();
             PlatformInfoInstance = new ::PlatformInfo(std::string("PlayStation 3"), std::string("0.2.0"));

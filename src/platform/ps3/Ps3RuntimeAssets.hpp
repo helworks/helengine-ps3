@@ -49,6 +49,16 @@ namespace helengine::ps3 {
     public:
         /// Creates an empty model that owns no GPU geometry yet.
         Ps3RuntimeModel();
+
+        /// Reports whether RSX buffers have been uploaded for this model.
+        bool HasGeometry() const;
+
+        /// Returns the number of indices the model would draw.
+        std::uint32_t IndexCount() const;
+
+    private:
+        /// Number of indices uploaded, or zero while the model has no geometry.
+        std::uint32_t IndexCounter;
     };
 }
 

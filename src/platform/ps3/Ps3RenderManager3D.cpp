@@ -5,24 +5,48 @@
 #include <cstdio>
 
 #include "AssetSerializer.hpp"
+#include "Core.hpp"
+#include "Entity.hpp"
+#include "ICamera.hpp"
 #include "IContentStreamSource.hpp"
+#include "IDrawable3D.hpp"
+#include "IRenderQueue3D.hpp"
+#include "ObjectManager.hpp"
 #include "PlatformMaterialAsset.hpp"
+#include "runtime/native_list.hpp"
 #include "system/io/stream.hpp"
 
 #include "platform/ps3/Ps3RuntimeAssets.hpp"
+#include "platform/ps3/Ps3Video.hpp"
 
 #include "runtime/native_exceptions.hpp"
 #include "runtime/native_runtime.hpp"
 
 namespace helengine::ps3 {
-    Ps3RenderManager3D::Ps3RenderManager3D()
+    Ps3RenderManager3D::Ps3RenderManager3D(Ps3Video& video)
         : DrawCounter(0)
         , LoggedFirstDraw(false)
         , RaiseOnDraw(false)
         , LoggedFirstMaterial(false)
         , LoggedFirstModel(false)
         , MaterialCounter(0)
-        , ModelCounter(0) {
+        , ModelCounter(0)
+        , Video(video)
+        , ViewProjection(::float4x4::get_Identity())
+        , VisitedDrawables(0)
+        , SubmittedDrawables(0)
+        , LoggedCamera(false)
+        , LoggedFirstVisit(false)
+        , LastSkipMarker(nullptr) {
+    }
+
+    void Ps3RenderManager3D::NoteSkip(const char* marker) {
+        // The same reason repeats every frame once it occurs, so only a change is reported.
+        if (LastSkipMarker == marker) {
+            return;
+        }
+        LastSkipMarker = marker;
+        std::printf("PS3_CORE_RENDER3D_SKIP reason=%s frame=%u\n", marker, DrawCounter);
     }
 
     void Ps3RenderManager3D::ArmDeliberateRaise() {
@@ -47,6 +71,98 @@ namespace helengine::ps3 {
             LoggedFirstDraw = true;
             std::printf("PS3_CORE_RENDER3D_FIRST_DRAW\n");
         }
+
+        VisitedDrawables = 0;
+        SubmittedDrawables = 0;
+
+        // Every stage below names itself when it cannot proceed, because a camera or queue
+        // that is merely absent looks identical on screen to one that is broken.
+        ::Core* core = get_OwnerCore();
+        if (core == nullptr || core->get_ObjectManager() == nullptr) {
+            NoteSkip("no-object-manager");
+            return;
+        }
+        ::List<::ICamera*>* cameras = core->get_ObjectManager()->get_Cameras();
+        if (cameras == nullptr || cameras->get_Count() == 0) {
+            NoteSkip("no-camera");
+            return;
+        }
+        ::ICamera* camera = cameras->get_Item(0);
+        if (camera == nullptr || camera->get_Parent() == nullptr || camera->get_RenderQueue3D() == nullptr) {
+            NoteSkip("camera-incomplete");
+            return;
+        }
+
+        // The view is the inverse of the camera's world transform, and the projection uses the
+        // authored field of view and planes, so one scene frames the same way on every platform.
+        ::float4x4 cameraWorld = camera->get_Parent()->get_WorldTransformMatrix();
+        // The engine keeps plain inversion private but exposes the inverse transpose, so the
+        // view is recovered by transposing that back. Same result, public surface only.
+        ::float4x4 inverseTranspose = ::float4x4::get_Identity();
+        if (!::float4x4::TryInverseTranspose__ref0_out1(cameraWorld, inverseTranspose)) {
+            NoteSkip("camera-transform-not-invertible");
+            return;
+        }
+        ::float4x4 view = ::float4x4::get_Identity();
+        ::float4x4::Transpose__ref0_out1(inverseTranspose, view);
+        ::float4x4 projection = ::float4x4::get_Identity();
+        ::float4x4::CreatePerspectiveFieldOfView__out4(
+            camera->get_FieldOfView(),
+            Video.Aspect(),
+            camera->get_NearPlaneDistance(),
+            camera->get_FarPlaneDistance(),
+            projection);
+        ::float4x4::Multiply__ref0_ref1_out2(view, projection, ViewProjection);
+
+        if (!LoggedCamera) {
+            LoggedCamera = true;
+            std::printf("PS3_CORE_CAMERA fov=%.4f near=%.3f far=%.1f aspect=%.4f position=%.3f,%.3f,%.3f\n",
+                        static_cast<double>(camera->get_FieldOfView()),
+                        static_cast<double>(camera->get_NearPlaneDistance()),
+                        static_cast<double>(camera->get_FarPlaneDistance()),
+                        static_cast<double>(Video.Aspect()),
+                        static_cast<double>(cameraWorld.M41),
+                        static_cast<double>(cameraWorld.M42),
+                        static_cast<double>(cameraWorld.M43));
+        }
+
+        camera->get_RenderQueue3D()->VisitOrdered(this);
+
+        if (DrawCounter == 1) {
+            std::printf("PS3_CORE_RENDER3D_QUEUE visited=%u submitted=%u\n", VisitedDrawables, SubmittedDrawables);
+        }
+    }
+
+    void Ps3RenderManager3D::Visit(::IDrawable3D* drawable) {
+        ++VisitedDrawables;
+        if (drawable == nullptr || drawable->get_Parent() == nullptr) {
+            NoteSkip("drawable-without-entity");
+            return;
+        }
+
+        Ps3RuntimeModel* model = dynamic_cast<Ps3RuntimeModel*>(drawable->get_Model());
+        if (model == nullptr) {
+            NoteSkip("drawable-without-ps3-model");
+            return;
+        }
+
+        ::float4x4 world = drawable->get_Parent()->get_WorldTransformMatrix();
+        ::float4x4 modelViewProjection = ::float4x4::get_Identity();
+        ::float4x4::Multiply__ref0_ref1_out2(world, ViewProjection, modelViewProjection);
+
+        if (!LoggedFirstVisit) {
+            LoggedFirstVisit = true;
+            std::printf("PS3_CORE_DRAWABLE_FIRST indices=%u position=%.3f,%.3f,%.3f\n",
+                        model->IndexCount(),
+                        static_cast<double>(world.M41),
+                        static_cast<double>(world.M42),
+                        static_cast<double>(world.M43));
+        }
+
+        // Geometry upload is the next step. The matrix is computed and reported above so the
+        // camera path can be checked against a running frame before any RSX buffers exist.
+        (void)modelViewProjection;
+        NoteSkip("model-without-geometry");
     }
 
     ::RuntimeModel* Ps3RenderManager3D::BuildModelFromRaw(::ModelAsset* data) {
