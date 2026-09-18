@@ -48,6 +48,22 @@ public static class Ps3PlatformDefinitionFactory {
                 new("native-file-system-type", "Native File System Type", PlatformSettingKind.Text, "helengine::ps3::Ps3ContentStreamSource", true, [])
             ]);
 
+        // Declaring a material schema is what makes the editor treat PlayStation 3 as a
+        // platform that cooks its own materials. Without one the build graph discards this
+        // builder for material work and falls back to a path that expects every material to
+        // carry an authored shader id, which PlayStation 3 never has.
+        PlatformMaterialSchemaDefinition materialSchema = new(
+            Ps3MaterialSchemaIds.StandardSchemaId,
+            "PlayStation 3 Standard",
+            [Ps3MaterialSchemaIds.StandardGraphicsProfileId],
+            [
+                new(Ps3MaterialSchemaIds.BaseColorFieldId, "Base Color", PlatformMaterialFieldKind.Color, "#FFFFFFFF", true, []),
+                new(Ps3MaterialSchemaIds.TextureRelativePathFieldId, "Texture", PlatformMaterialFieldKind.Text, string.Empty, true, []),
+                new(Ps3MaterialSchemaIds.LightingModeFieldId, "Lighting", PlatformMaterialFieldKind.Choice, Ps3MaterialSchemaIds.LightingUnlitValue, true, [Ps3MaterialSchemaIds.LightingLitValue, Ps3MaterialSchemaIds.LightingUnlitValue]),
+                new(Ps3MaterialSchemaIds.DoubleSidedFieldId, "Double Sided", PlatformMaterialFieldKind.Boolean, "false", true, []),
+                new(Ps3MaterialSchemaIds.VertexColorModeFieldId, "Vertex Color", PlatformMaterialFieldKind.Choice, Ps3MaterialSchemaIds.VertexColorIgnoreValue, true, [Ps3MaterialSchemaIds.VertexColorModulateValue, Ps3MaterialSchemaIds.VertexColorIgnoreValue])
+            ]);
+
         PlatformBuildProfileDefinition[] profiles = [
             new("debug", "Debug", "PlayStation 3 development build", StandardGraphicsProfileId, "default", buildSettings),
             new("release", "Release", "PlayStation 3 release build", StandardGraphicsProfileId, "default", buildSettings)
@@ -59,7 +75,7 @@ public static class Ps3PlatformDefinitionFactory {
             profiles,
             [new PlatformGraphicsProfileDefinition(StandardGraphicsProfileId, "PlayStation 3 Standard", "RSX opaque renderer", [])],
             [new PlatformAssetRequirementDefinition("scene", "Scene", true, ["helen"])],
-            [],
+            [materialSchema],
             [
                 // Packaged so scenes cook, but not drawn. The v0.2 boot gate runs Core against
                 // an empty scene, so these records travel through the build unrendered rather

@@ -11,6 +11,9 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder {
     /// <summary>Executor that performs the native build phase.</summary>
     readonly IPs3NativeBuildExecutor NativeBuildExecutor;
 
+    /// <summary>Translates the authored material schema into the cooked platform payload.</summary>
+    readonly Ps3MaterialCooker MaterialCooker = new();
+
     /// <summary>Creates a builder using the production native executor.</summary>
     public Ps3PlatformAssetBuilder()
         : this(new Ps3NativeBuildExecutor()) {
@@ -42,16 +45,14 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder {
     public helengine.baseplatform.Definitions.PlatformDefinition Definition { get; }
 
     /// <summary>
-    /// Refuses material cooking, which belongs to the authored scene milestone rather than the
-    /// boot gate. The refusal is explicit so a caller learns why rather than receiving empty
-    /// cooked bytes that would fail confusingly on the console.
+    /// Cooks one authored material into the platform-owned payload the PlayStation 3 renderer
+    /// reads. The boot gate draws no authored geometry yet, so these materials are packaged
+    /// rather than drawn, in the same way authored meshes and cameras already are.
     /// </summary>
     /// <param name="request">Material request from the build graph.</param>
-    /// <returns>Never returns normally.</returns>
-    /// <exception cref="NotSupportedException">Always thrown, naming the milestone that implements cooking.</exception>
+    /// <returns>Serialized platform material bytes with no shader dependencies.</returns>
     public PlatformMaterialCookResult CookMaterial(PlatformMaterialCookRequest request) {
-        throw new NotSupportedException(
-            "The PlayStation 3 v0.2 boot gate does not cook materials. Material cooking arrives with the authored scene milestone.");
+        return MaterialCooker.Cook(request);
     }
 
     /// <summary>
