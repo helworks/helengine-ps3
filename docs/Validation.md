@@ -102,6 +102,7 @@ unity translation unit `helengine_core_unity.cpp`.
 | v0.1 regression | Passed | `v01-regression-01\emulator-runs\20260917-175038\TTY.log`: `coreEnabled=0`, no Core stages, 598 frames in 10 s, exit 0 |
 | Build safety | Passed | `scripts\tests\build-contract.tests.ps1`: 42 checks, including that `-CoreFailurePoint` is refused outside Core mode and that a successful Core build records it |
 | End-to-end editor build | Passed | `platform-build-09`: the editor platform build ran codegen, packaged demodisc and produced `helengine_ps3.self` (824,080 bytes), exit 0. That artifact then ran 36,430 frames with Core driving every one, 33 ring wraps, no FIFO errors, and exited 0 on a window close (`core-07d11c3ad52a4a4db8677ea65353c6af\emulator-runs\20260918-001134\TTY.log`) |
+| Material cooking | Passed | `builder.tests`: 10 checks covering colour translation, schema defaults, surface state, the texture refusal and the schema being published. End to end, `platform-build-10` cooked ten materials carrying the `ps3-standard` renderer family |
 | Hardware | Not attempted | No PS3 hardware was used |
 
 ### Heap accounting
@@ -158,10 +159,16 @@ material actually resolves an id, with a regression test that reproduced the exa
 exception beforehand. The generated tree used above is still the snapshot taken before
 that fix, so the compile and run evidence is unchanged.
 
-The PS3 definition remains inconsistent in a way worth closing separately: it declares
-CookedPlatformOwned material resolution while supplying no material schema, and its
-builder refuses every material cook request. Authored materials will need both before the
-scene milestone.
+That inconsistency is now closed. The definition publishes the `ps3-standard-v1` schema
+and the builder cooks against it, so the editor uses this builder for material work rather
+than the fallback. A rerun of the end-to-end build cooked ten materials carrying the
+`ps3-standard` renderer family, and its artifact booted Core for 2,391 frames and exited 0
+(`platform-build-10`). Adding the schema makes code generation emit a cooked-material
+entry point, which is why the generated tree now produces 79 warnings rather than 62; the
+extra ones are unused-parameter notices in generated stubs.
+
+Textures remain refused by the cooker. The build stages none, so a bound texture would
+write a path that resolves to nothing on the console.
 ## Findings worth keeping
 
 - **PSL1GHT librsx wrap bug.** The pinned librsx keeps `context->current` cached across
