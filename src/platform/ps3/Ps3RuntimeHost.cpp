@@ -13,8 +13,12 @@
 #include "CoreInitializationOptions.hpp"
 #include "PlatformInfo.hpp"
 
+#include "SceneLoadMode.hpp"
+#include "SceneManager.hpp"
+
 #include "platform/ps3/Ps3ContentStreamSource.hpp"
 #include "platform/ps3/Ps3InputBackend.hpp"
+#include "platform/ps3/Ps3SceneBootstrap.hpp"
 #include "platform/ps3/Ps3RenderManager2D.hpp"
 #include "platform/ps3/Ps3RenderManager3D.hpp"
 #include "platform/ps3/Ps3Video.hpp"
@@ -104,7 +108,7 @@ namespace helengine::ps3 {
         snapshot.Render2DDrawCount = 0;
         snapshot.CoreReadyFreeBytes = 0;
         snapshot.CoreDisposedFreeBytes = 0;
-        snapshot.Reserved = 0;
+        snapshot.SceneLoaded = 0;
     }
 
     Ps3RuntimeHost::~Ps3RuntimeHost() {
@@ -143,6 +147,13 @@ namespace helengine::ps3 {
             ContentStreamSourceInstance = new Ps3ContentStreamSource();
             InitializationOptionsInstance = new ::CoreInitializationOptions();
             InitializationOptionsInstance->set_ContentStreamSource(ContentStreamSourceInstance);
+
+            // A build that packaged no scenes has no catalog, and Core is happy without one.
+            // The boot gate is exactly that case, so this stays optional rather than required.
+            ::RuntimeSceneCatalog* sceneCatalog = BuildPs3RuntimeSceneCatalog();
+            if (sceneCatalog != nullptr) {
+                InitializationOptionsInstance->set_SceneCatalog(sceneCatalog);
+            }
         });
         if (!adapters.Succeeded) {
             Fail(Ps3CoreError::AdapterConstruction, "AdapterConstruction", adapters.Detail.c_str());
@@ -177,6 +188,24 @@ namespace helengine::ps3 {
         helengine_ps3_core_probe.CoreReadyFreeBytes = FreeHeapBytes();
         EnterStage(Ps3CoreStage::CoreInitialized);
         std::printf("PS3_CORE_READY freeBytes=%u\n", helengine_ps3_core_probe.CoreReadyFreeBytes);
+
+        const char* startupSceneId = Ps3StartupSceneId();
+        if (startupSceneId == nullptr) {
+            std::printf("PS3_CORE_SCENE none=1 reason=build-packaged-no-scenes\n");
+            return true;
+        }
+
+        std::printf("PS3_CORE_SCENE_LOADING sceneId=%s\n", startupSceneId);
+        const GuardedResult sceneLoad = Guard([this, startupSceneId] {
+            CoreInstance->get_SceneManager()->LoadScene(std::string(startupSceneId), ::SceneLoadMode::Single);
+        });
+        if (!sceneLoad.Succeeded) {
+            Fail(Ps3CoreError::SceneLoad, "SceneLoad", sceneLoad.Detail.c_str());
+            return false;
+        }
+
+        helengine_ps3_core_probe.SceneLoaded = 1;
+        std::printf("PS3_CORE_SCENE_LOADED sceneId=%s freeBytes=%u\n", startupSceneId, FreeHeapBytes());
         return true;
     }
 

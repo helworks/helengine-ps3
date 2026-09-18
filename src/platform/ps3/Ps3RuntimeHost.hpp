@@ -39,6 +39,7 @@ namespace helengine::ps3 {
         FrameBoundary = 6,
         CoreDisposal = 7,
         DeliberateFailurePoint = 8,
+        SceneLoad = 9,
     };
 
     /// Versioned snapshot of the Core lifecycle, written as it progresses.
@@ -74,8 +75,9 @@ namespace helengine::ps3 {
         /// Free heap in bytes after Core was disposed, or zero if it never was.
         std::uint32_t CoreDisposedFreeBytes;
 
-        /// Reserved so the structure keeps a stable size as fields are added.
-        std::uint32_t Reserved;
+        /// Non-zero once the startup scene finished loading. Claims the reserved word, which
+        /// is why the layout version below is 2.
+        std::uint32_t SceneLoaded;
     };
 
     static_assert(sizeof(Ps3CoreProbeSnapshot) == 40, "Core probe snapshot layout must remain stable");
@@ -88,8 +90,9 @@ namespace helengine::ps3 {
     /// Magic value spelling HEC3, marking a valid snapshot.
     constexpr std::uint32_t Ps3CoreProbeMagic = 0x48454333u;
 
-    /// Layout version of the snapshot structure.
-    constexpr std::uint32_t Ps3CoreProbeVersion = 1u;
+    /// Layout version of the snapshot structure. Version 2 renamed the reserved word to
+    /// SceneLoaded, so a reader of version 1 must not interpret that field.
+    constexpr std::uint32_t Ps3CoreProbeVersion = 2u;
 
     /// Owns the generated Core lifetime for the v0.2 boot gate.
     ///
