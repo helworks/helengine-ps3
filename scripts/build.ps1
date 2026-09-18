@@ -26,6 +26,7 @@ param(
     [string]$OutputRoot = 'C:\dev\helworks\builds\helengine-ps3',
     [ValidateRange(0.0, 6.2832)][double]$FixedPoseRadians = 0.6,
     [string]$GeneratedCoreRoot = '',
+    [string]$ContentRoot = '',
     [ValidateSet('None','AfterCoreInitialize','DuringCoreDraw')]
     [string]$CoreFailurePoint = 'None'
 )
@@ -163,6 +164,11 @@ if ($Mode -eq 'Core') {
 
 # A Core failure point outside Core mode would compile away silently, so the request is
 # refused rather than ignored.
+# Content is only meaningful where a generated Core can load it, so a content root outside
+# Core mode is refused rather than copied and never read.
+if ($Mode -ne 'Core' -and -not [string]::IsNullOrWhiteSpace($ContentRoot)) {
+    throw "-ContentRoot is only valid in Core mode; this build requested mode '$Mode'."
+}
 if ($Mode -ne 'Core' -and $CoreFailurePoint -ne 'None') {
     throw "-CoreFailurePoint is only valid in Core mode; this build requested mode '$Mode'."
 }
@@ -246,6 +252,28 @@ foreach ($artifactName in $requiredArtifacts) {
         throw "Required artifact is empty after a successful build: $artifactPath"
     }
 }
+# --- Content installation ---------------------------------------------------------------
+# Cooked content is installed under USRDIR/content next to the executable, which is the path
+# Ps3ContentStreamSource resolves against at run time. The count is recorded so a build that
+# staged nothing is visible in the manifest rather than only at run time.
+$installedContentFileCount = 0
+if (-not [string]::IsNullOrWhiteSpace($ContentRoot)) {
+    $ContentRoot = [IO.Path]::GetFullPath($ContentRoot)
+    if (-not (Test-Path -LiteralPath $ContentRoot -PathType Container)) {
+        throw "Content root does not exist: $ContentRoot"
+    }
+    $contentDestination = Join-Path $buildRoot 'USRDIR\content'
+    New-Item -ItemType Directory -Path $contentDestination -Force | Out-Null
+    $contentPrefix = $ContentRoot.TrimEnd('\', '/') + '\'
+    foreach ($contentFile in (Get-ChildItem -LiteralPath $ContentRoot -Recurse -File)) {
+        $relative = $contentFile.FullName.Substring($contentPrefix.Length)
+        $destinationPath = Join-Path $contentDestination $relative
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destinationPath) -Force | Out-Null
+        Copy-Item -LiteralPath $contentFile.FullName -Destination $destinationPath -Force
+        $installedContentFileCount++
+    }
+    Write-Output "Installed $installedContentFileCount cooked content files under $contentDestination"
+}
 $shaderDirectory = Join-Path $buildRoot 'shaders'
 $shaderArtifacts = @()
 if (Test-Path -LiteralPath $shaderDirectory -PathType Container) {
@@ -309,6 +337,8 @@ $manifest = [PSCustomObject]@{
     RunSeconds = $RunSeconds
     FailurePoint = $FailurePoint
     CoreFailurePoint = $CoreFailurePoint
+    ContentRoot = $ContentRoot
+    InstalledContentFileCount = $installedContentFileCount
     FixedPoseRadians = $FixedPoseRadians
     ToolchainLockSha256 = $lockHash
     GeneratedCoreRoot = $GeneratedCoreRoot

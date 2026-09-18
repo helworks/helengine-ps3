@@ -14,15 +14,18 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
     /// <summary>Builds a Core-mode executable from the supplied generated Core root.</summary>
     /// <param name="request">Complete platform request.</param>
     /// <param name="generatedCoreRoot">Root of the generated Core C++ tree.</param>
+    /// <param name="contentRoot">Staged cooked content installed beside the executable.</param>
     /// <param name="cancellationToken">Cooperative cancellation token.</param>
     /// <exception cref="ArgumentNullException">Thrown when the request is missing.</exception>
     /// <exception cref="ArgumentException">Thrown when the generated Core root is missing.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the checkout is unset, the build fails, or the outputs are absent.</exception>
-    public void Build(PlatformBuildRequest request, string generatedCoreRoot, CancellationToken cancellationToken) {
+    public void Build(PlatformBuildRequest request, string generatedCoreRoot, string contentRoot, CancellationToken cancellationToken) {
         if (request == null) {
             throw new ArgumentNullException(nameof(request));
         } else if (string.IsNullOrWhiteSpace(generatedCoreRoot)) {
             throw new ArgumentException("Generated Core root is required.", nameof(generatedCoreRoot));
+        } else if (string.IsNullOrWhiteSpace(contentRoot)) {
+            throw new ArgumentException("Staged content root is required.", nameof(contentRoot));
         }
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -56,6 +59,8 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
         startInfo.ArgumentList.Add(request.OutputRoot);
         startInfo.ArgumentList.Add("-GeneratedCoreRoot");
         startInfo.ArgumentList.Add(Path.GetFullPath(generatedCoreRoot));
+        startInfo.ArgumentList.Add("-ContentRoot");
+        startInfo.ArgumentList.Add(Path.GetFullPath(contentRoot));
 
         using Process process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
         if (!process.Start()) {

@@ -56,8 +56,8 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder {
     }
 
     /// <summary>
-    /// Compiles the regenerated Core into the native executable. No content is staged in this
-    /// milestone, because the boot gate runs Core against an empty scene.
+    /// Stages the declared cooked content, writes the runtime scene catalog beside generated
+    /// Core, then compiles both into the native executable.
     /// </summary>
     /// <param name="request">Resolved graph build request.</param>
     /// <param name="progressReporter">Progress callback.</param>
@@ -88,8 +88,22 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder {
                 throw new InvalidOperationException("PlayStation 3 Core build requires GeneratedCoreCppRootPath.");
             }
             Directory.CreateDirectory(request.OutputRoot);
+
+            // Content is staged before the native build, because the build installs the staged
+            // tree beside the executable and compiles the catalog that names its scenes.
+            string packageSourceRoot = ResolvePackageSourceRoot(request.WorkingRoot);
+            string stagingRoot = Path.Combine(request.WorkingRoot, "ps3-authored-content");
+            progressReporter.Report(new PlatformBuildProgressUpdate("Stage Content", "manifest", 0, 1, "Staging declared PlayStation 3 cooked artifacts."));
+            IReadOnlyList<string> staged = new Ps3ContentStager().Stage(
+                request.Manifest.CookedArtifacts,
+                packageSourceRoot,
+                stagingRoot,
+                cancellationToken);
+            new Ps3StartupManifestWriter().Write(request.GeneratedCoreCppRootPath, request.Manifest);
+            progressReporter.Report(new PlatformBuildProgressUpdate("Stage Content", "manifest", 1, 1, $"Staged {staged.Count} cooked artifacts."));
+
             progressReporter.Report(new PlatformBuildProgressUpdate("Build Native SELF", "ps3", 0, 1, "Preparing the PlayStation 3 native executor."));
-            NativeBuildExecutor.Build(request, request.GeneratedCoreCppRootPath, cancellationToken);
+            NativeBuildExecutor.Build(request, request.GeneratedCoreCppRootPath, stagingRoot, cancellationToken);
             progressReporter.Report(new PlatformBuildProgressUpdate("Build Native SELF", "ps3", 1, 1, "Built the PlayStation 3 native runtime."));
         } catch (OperationCanceledException) {
             throw;
@@ -113,5 +127,21 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder {
             [.. diagnostics],
             request.Manifest.Scenes.Select(scene => new PlatformBuildItemOutcome(scene.SceneId, outcomeKind)).ToArray(),
             request.Manifest.LooseAssets.Select(asset => new PlatformBuildItemOutcome(asset.AssetId, outcomeKind)).ToArray()));
+    }
+
+    /// <summary>Locates the editor-staged package-source tree that owns the cooked files.</summary>
+    /// <param name="workingRootPath">Builder working root supplied by the build graph.</param>
+    /// <returns>Absolute package-source root.</returns>
+    static string ResolvePackageSourceRoot(string workingRootPath) {
+        if (string.IsNullOrWhiteSpace(workingRootPath)) {
+            throw new ArgumentException("Builder working root is required.", nameof(workingRootPath));
+        }
+
+        string packageSourceRoot = Path.Combine(Path.GetFullPath(workingRootPath), "package-source");
+        if (!Directory.Exists(packageSourceRoot)) {
+            throw new DirectoryNotFoundException($"PlayStation 3 builder package source root '{packageSourceRoot}' was not found.");
+        }
+
+        return packageSourceRoot;
     }
 }

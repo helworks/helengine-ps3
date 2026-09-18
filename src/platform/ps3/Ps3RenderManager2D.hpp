@@ -8,12 +8,12 @@
 #include "runtime/array.hpp"
 
 namespace helengine::ps3 {
-    /// Minimal 2D render manager for the v0.2 Core boot gate.
+    /// Accepting 2D render manager for PlayStation 3, which has no 2D pipeline yet.
     ///
-    /// Core requires a 2D manager to initialize, so this adapter exists to satisfy that
-    /// contract while the gate proves the lifecycle. It draws nothing and refuses every
-    /// request that would need real texture resources, so an unimplemented path is never
-    /// mistaken for an empty overlay.
+    /// Authored scenes carry overlay content that Core drives every frame, so these entry
+    /// points accept the work and draw nothing rather than raising. That lets a scene's 3D
+    /// content run while its overlay is absent. Each entry point reports its first use once,
+    /// so the gap stays visible in the console log without flooding it.
     ///
     /// The five members overridden here are exactly the abstract ones on the generated base.
     class Ps3RenderManager2D final : public ::RenderManager2D {
@@ -24,31 +24,34 @@ namespace helengine::ps3 {
         /// Counts how many times Core asked this manager to draw.
         std::uint32_t DrawCount() const;
 
+        /// Counts individual 2D draw requests accepted and not drawn.
+        std::uint32_t SkippedDrawCount() const;
+
         /// Records the draw request and presents nothing.
         void Draw() override;
 
-        /// Refuses texture construction, which belongs to a later milestone.
+        /// Returns a texture object with no GPU memory behind it.
         /// @param data Raw texture asset Core is asking to realize.
-        /// @return Never returns normally.
+        /// @return An owned texture carrying the source dimensions and nothing else.
         ::RuntimeTexture* BuildTextureFromRaw(::TextureAsset* data) override;
 
-        /// Refuses rounded-rectangle drawing, which the gate has no 2D pipeline for.
+        /// Accepts rounded-rectangle drawing and draws nothing.
         /// @param shape Drawable Core is asking to render.
         void DrawRoundedRect(::IRoundedRectDrawable2D* shape) override;
 
-        /// Refuses sprite drawing, which the gate has no 2D pipeline for.
+        /// Accepts sprite drawing and draws nothing.
         /// @param sprite Drawable Core is asking to render.
         void DrawSprite(::ISpriteDrawable2D* sprite) override;
 
-        /// Refuses text drawing, which the gate has no font pipeline for.
+        /// Accepts text drawing and draws nothing.
         /// @param text Drawable Core is asking to render.
         void DrawText(::ITextDrawable2D* text) override;
 
-        /// Releases nothing, because this adapter never hands out textures.
+        /// Reports the accepted and skipped draw counts.
         void Dispose() override;
 
     protected:
-        /// Refuses texture updates, since no texture can have been created to update.
+        /// Accepts texture updates and changes nothing.
         /// @param texture Texture Core is asking to update.
         /// @param x Left edge of the updated region.
         /// @param y Top edge of the updated region.
@@ -71,6 +74,24 @@ namespace helengine::ps3 {
 
         /// Whether the first draw has already been logged, so the log stays readable.
         bool LoggedFirstDraw;
+
+        /// Whether the first texture build has been reported.
+        bool LoggedBuildTexture;
+
+        /// Whether the first rounded-rectangle request has been reported.
+        bool LoggedRoundedRect;
+
+        /// Whether the first sprite request has been reported.
+        bool LoggedSprite;
+
+        /// Whether the first text request has been reported.
+        bool LoggedText;
+
+        /// Whether the first texture update has been reported.
+        bool LoggedTextureUpdate;
+
+        /// Number of 2D draw requests accepted and not drawn.
+        std::uint32_t SkippedDrawCounter;
     };
 }
 

@@ -7,6 +7,7 @@ public interface IPs3NativeBuildExecutor {
     /// <summary>Builds the PlayStation 3 executable from an external generated Core root.</summary>
     /// <param name="request">Complete platform request.</param>
     /// <param name="generatedCoreRoot">Root of the generated Core C++ tree.</param>
+    /// <param name="contentRoot">Staged cooked content installed beside the executable.</param>
     /// <param name="cancellationToken">Cooperative cancellation token.</param>
-    void Build(PlatformBuildRequest request, string generatedCoreRoot, CancellationToken cancellationToken);
+    void Build(PlatformBuildRequest request, string generatedCoreRoot, string contentRoot, CancellationToken cancellationToken);
 }
