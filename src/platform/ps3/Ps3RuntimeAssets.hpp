@@ -7,6 +7,8 @@
 #include "RuntimeMaterial.hpp"
 #include "RuntimeModel.hpp"
 
+#include "platform/ps3/Ps3RasterRenderer.hpp"
+
 namespace helengine::ps3 {
     /// Cooked material as the PlayStation 3 renderer needs it.
     ///
@@ -56,9 +58,16 @@ namespace helengine::ps3 {
         /// Returns the number of indices the model would draw.
         std::uint32_t IndexCount() const;
 
+        /// Returns the RSX buffers backing this model.
+        const Ps3MeshBuffers& Buffers() const;
+
+        /// Takes ownership of uploaded RSX buffers.
+        /// @param buffers Buffers this model becomes responsible for.
+        void AdoptBuffers(const Ps3MeshBuffers& buffers);
+
     private:
-        /// Number of indices uploaded, or zero while the model has no geometry.
-        std::uint32_t IndexCounter;
+        /// RSX buffers this model owns, zeroed until geometry is uploaded.
+        Ps3MeshBuffers MeshBuffers;
     };
 }
 

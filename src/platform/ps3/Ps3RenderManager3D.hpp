@@ -13,6 +13,7 @@
 class Asset;
 
 namespace helengine::ps3 {
+    class Ps3RasterRenderer;
     class Ps3Video;
 
     /// Minimal 3D render manager for the v0.2 Core boot gate.
@@ -28,7 +29,8 @@ namespace helengine::ps3 {
     public:
         /// Creates an adapter bound to the video owner and raster renderer it draws through.
         /// @param video Video owner supplying the display aspect. Must outlive this.
-        Ps3RenderManager3D(Ps3Video& video);
+        /// @param renderer Raster renderer that uploads geometry and submits draws. Must outlive this.
+        Ps3RenderManager3D(Ps3Video& video, Ps3RasterRenderer& renderer);
 
         /// Draws one scene drawable the camera ordered.
         /// @param drawable Drawable Core ordered for the active camera.
@@ -96,6 +98,9 @@ namespace helengine::ps3 {
 
         /// Number of cooked models realized.
         std::uint32_t ModelCounter;
+
+        /// Raster renderer that uploads geometry and submits draws.
+        Ps3RasterRenderer& Renderer;
 
         /// Video owner supplying the display aspect.
         Ps3Video& Video;

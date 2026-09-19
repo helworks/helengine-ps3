@@ -68,6 +68,7 @@ namespace helengine::ps3 {
         // disposal, rather than leaving it to a destructor that runs after video teardown.
         Ps3RuntimeHost runtimeHost;
         bool coreReady = false;
+        bool coreSceneActive = false;
 #endif
         bool failed = false;
         bool videoReady = false;
@@ -107,11 +108,13 @@ namespace helengine::ps3 {
             if (options.CoreFailurePoint == 2) {
                 runtimeHost.ArmDeliberateDrawFailure();
             }
-            if (!runtimeHost.Initialize(video)) {
+            if (!runtimeHost.Initialize(video, renderer)) {
                 failed = true;
                 exitReason = "core-initialization-failed";
             } else {
                 coreReady = true;
+                coreSceneActive = runtimeHost.SceneLoaded();
+                std::printf("PS3_BOOT_SCENE_ACTIVE active=%d\n", coreSceneActive ? 1 : 0);
             }
         }
         if (!failed && coreReady && options.CoreFailurePoint == 1) {
@@ -170,7 +173,10 @@ namespace helengine::ps3 {
                 if (rendererReady && video.PresentedFrameCount() == 1) {
                     LogFrameProbe(video, "first-frame", pose);
                 }
-                if (rendererReady) {
+                // Once an authored scene is loaded, Core owns what appears on screen. The
+                // v0.1 diagnostic cube stands down rather than drawing over it, so what is
+                // visible is unambiguously the authored content.
+                if (rendererReady && !coreSceneActive) {
                     Ps3Matrix4 modelViewProjection;
                     try {
                         modelViewProjection = Ps3CubeTransform::Build(pose, video.Aspect());

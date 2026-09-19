@@ -18,6 +18,7 @@
 
 #include "platform/ps3/Ps3ContentStreamSource.hpp"
 #include "platform/ps3/Ps3InputBackend.hpp"
+#include "platform/ps3/Ps3RasterRenderer.hpp"
 #include "platform/ps3/Ps3SceneBootstrap.hpp"
 #include "platform/ps3/Ps3RenderManager2D.hpp"
 #include "platform/ps3/Ps3RenderManager3D.hpp"
@@ -138,9 +139,9 @@ namespace helengine::ps3 {
                     stageName, static_cast<unsigned>(error), detail != nullptr ? detail : "(none)");
     }
 
-    bool Ps3RuntimeHost::Initialize(Ps3Video& video) {
-        const GuardedResult adapters = Guard([this, &video] {
-            RenderManager3DInstance = new Ps3RenderManager3D(video);
+    bool Ps3RuntimeHost::Initialize(Ps3Video& video, Ps3RasterRenderer& renderer) {
+        const GuardedResult adapters = Guard([this, &video, &renderer] {
+            RenderManager3DInstance = new Ps3RenderManager3D(video, renderer);
             RenderManager2DInstance = new Ps3RenderManager2D();
             InputBackendInstance = new Ps3InputBackend();
             PlatformInfoInstance = new ::PlatformInfo(std::string("PlayStation 3"), std::string("0.2.0"));
@@ -313,6 +314,10 @@ namespace helengine::ps3 {
 
     Ps3CoreError Ps3RuntimeHost::Error() const {
         return ErrorValue;
+    }
+
+    bool Ps3RuntimeHost::SceneLoaded() const {
+        return helengine_ps3_core_probe.SceneLoaded != 0;
     }
 
     std::uint32_t Ps3RuntimeHost::FrameCount() const {

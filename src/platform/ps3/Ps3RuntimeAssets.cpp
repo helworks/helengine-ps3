@@ -15,15 +15,23 @@ namespace helengine::ps3 {
     }
 
     bool Ps3RuntimeModel::HasGeometry() const {
-        return IndexCounter != 0;
+        return MeshBuffers.IndexCount != 0;
     }
 
     std::uint32_t Ps3RuntimeModel::IndexCount() const {
-        return IndexCounter;
+        return MeshBuffers.IndexCount;
+    }
+
+    const Ps3MeshBuffers& Ps3RuntimeModel::Buffers() const {
+        return MeshBuffers;
+    }
+
+    void Ps3RuntimeModel::AdoptBuffers(const Ps3MeshBuffers& buffers) {
+        MeshBuffers = buffers;
     }
 
     Ps3RuntimeModel::Ps3RuntimeModel()
-        : IndexCounter(0) {
+        : MeshBuffers{ nullptr, 0, nullptr, 0, 0, 0 } {
         // Core walks the submesh list during draw, so an empty list is supplied rather than
         // leaving it null. Real geometry replaces this once the RSX buffers are built.
         SetSubmeshes(new Array<::RuntimeSubmesh*>(0));

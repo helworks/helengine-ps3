@@ -184,6 +184,90 @@ namespace helengine::ps3 {
         return true;
     }
 
+    bool Ps3RasterRenderer::UploadMesh(const Ps3Vertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount, Ps3MeshBuffers& buffers) {
+        buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, 0 };
+        if (!Initialized) {
+            std::printf("PS3_MESH_ERROR stage=upload reason=renderer-not-initialized\n");
+            return false;
+        }
+        if (vertices == nullptr || indices == nullptr || vertexCount == 0 || indexCount == 0 || (indexCount % 3) != 0) {
+            std::printf("PS3_MESH_ERROR stage=upload reason=invalid-geometry vertices=%u indices=%u\n", vertexCount, indexCount);
+            return false;
+        }
+
+        const u32 vertexBytes = vertexCount * static_cast<u32>(sizeof(Ps3Vertex));
+        const u32 indexBytes = indexCount * static_cast<u32>(sizeof(u16));
+        void* vertexBuffer = rsxMemalign(GeometryAlignment, vertexBytes);
+        if (vertexBuffer == nullptr) {
+            std::printf("PS3_MESH_ERROR stage=upload reason=vertex-alloc-failed bytes=%u\n", vertexBytes);
+            return false;
+        }
+        u32 vertexOffset = 0;
+        if (rsxAddressToOffset(vertexBuffer, &vertexOffset) != 0) {
+            std::printf("PS3_MESH_ERROR stage=upload reason=vertex-offset-failed\n");
+            rsxFree(vertexBuffer);
+            return false;
+        }
+        void* indexBuffer = rsxMemalign(GeometryAlignment, indexBytes);
+        if (indexBuffer == nullptr) {
+            std::printf("PS3_MESH_ERROR stage=upload reason=index-alloc-failed bytes=%u\n", indexBytes);
+            rsxFree(vertexBuffer);
+            return false;
+        }
+        u32 indexOffset = 0;
+        if (rsxAddressToOffset(indexBuffer, &indexOffset) != 0) {
+            std::printf("PS3_MESH_ERROR stage=upload reason=index-offset-failed\n");
+            rsxFree(indexBuffer);
+            rsxFree(vertexBuffer);
+            return false;
+        }
+
+        std::memcpy(vertexBuffer, vertices, vertexBytes);
+        std::memcpy(indexBuffer, indices, indexBytes);
+        buffers = Ps3MeshBuffers{ vertexBuffer, vertexOffset, indexBuffer, indexOffset, indexCount, vertexBytes + indexBytes };
+        std::printf("PS3_MESH_UPLOADED vertices=%u indices=%u bytes=%u\n", vertexCount, indexCount, buffers.OwnedBytes);
+        return true;
+    }
+
+    void Ps3RasterRenderer::ReleaseMesh(Ps3MeshBuffers& buffers) {
+        if (buffers.IndexBuffer != nullptr) {
+            rsxFree(buffers.IndexBuffer);
+        }
+        if (buffers.VertexBuffer != nullptr) {
+            rsxFree(buffers.VertexBuffer);
+        }
+        buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, 0 };
+    }
+
+    bool Ps3RasterRenderer::DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection) {
+        if (!Initialized) {
+            std::printf("PS3_RENDERER_ERROR stage=draw-indexed reason=not-initialized\n");
+            return false;
+        }
+        if (buffers.IndexCount == 0 || buffers.VertexBuffer == nullptr || buffers.IndexBuffer == nullptr) {
+            return false;
+        }
+        // Same pipeline and render state as the built-in cube; only the geometry differs.
+        rsxBindVertexArrayAttrib(ContextValue, PositionAttributeIndex, 0, buffers.VertexBufferOffset + PositionByteOffset, VertexStride, 3, GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
+        rsxBindVertexArrayAttrib(ContextValue, ColorAttributeIndex, 0, buffers.VertexBufferOffset + ColorByteOffset, VertexStride, 4, GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
+        rsxLoadVertexProgram(ContextValue, VertexProgram, VertexUcode);
+        UploadModelViewProjection(modelViewProjection);
+        rsxLoadFragmentProgramLocation(ContextValue, FragmentProgram, FragmentUcodeOffset, GCM_LOCATION_RSX);
+        rsxSetDepthTestEnable(ContextValue, GCM_TRUE);
+        rsxSetDepthFunc(ContextValue, GCM_LESS);
+        rsxSetDepthWriteEnable(ContextValue, GCM_TRUE);
+        rsxSetBlendEnable(ContextValue, GCM_FALSE);
+        rsxSetShadeModel(ContextValue, GCM_SHADE_MODEL_SMOOTH);
+        rsxSetFrontFace(ContextValue, GCM_FRONTFACE_CCW);
+        rsxSetCullFace(ContextValue, GCM_CULL_BACK);
+        rsxSetCullFaceEnable(ContextValue, GCM_TRUE);
+        rsxSetUserClipPlaneControl(ContextValue, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE,
+                                   GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE);
+        rsxDrawIndexArray(ContextValue, GCM_TYPE_TRIANGLES, buffers.IndexBufferOffset, buffers.IndexCount, GCM_INDEX_TYPE_16B, GCM_LOCATION_RSX);
+        ++DrawCounter;
+        return true;
+    }
+
     void Ps3RasterRenderer::Shutdown() {
         u32 freedBytes = 0;
         if (IndexBuffer != nullptr) {

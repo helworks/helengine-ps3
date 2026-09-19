@@ -7,6 +7,32 @@
 
 namespace helengine::ps3 {
     class Ps3Video;
+    struct Ps3Vertex;
+
+    /// RSX buffers backing one authored mesh.
+    ///
+    /// The renderer owns the programs and render state; a mesh owns only its own geometry,
+    /// so a scene with several models does not duplicate the pipeline. Zeroed fields mean
+    /// nothing was allocated, which is what an unbuilt model carries.
+    struct Ps3MeshBuffers {
+        /// Host pointer to the RSX-local vertex buffer, or null.
+        void* VertexBuffer;
+
+        /// RSX offset of the vertex buffer.
+        u32 VertexBufferOffset;
+
+        /// Host pointer to the RSX-local index buffer, or null.
+        void* IndexBuffer;
+
+        /// RSX offset of the index buffer.
+        u32 IndexBufferOffset;
+
+        /// Number of 16-bit indices uploaded.
+        u32 IndexCount;
+
+        /// RSX-local bytes this mesh owns.
+        u32 OwnedBytes;
+    };
 
     /// Owns the GPU resources for the unlit cube and submits its draw: the embedded
     /// vertex/fragment programs (reflected for the POSITION/COLOR0 attributes and the
@@ -31,6 +57,26 @@ namespace helengine::ps3 {
         /// Submits the cube with the given row-major model/view/projection matrix into the
         /// frame that Ps3Video::BeginFrame() opened. Returns false if not initialized.
         bool Draw(const Ps3Matrix4& modelViewProjection);
+
+        /// Uploads one authored mesh into RSX memory.
+        /// @param vertices Vertex array in the renderer's 28-byte layout.
+        /// @param vertexCount Number of vertices.
+        /// @param indices Triangle-list indices.
+        /// @param indexCount Number of indices; must be a multiple of three.
+        /// @param buffers Receives the allocated buffers, or stays zeroed on failure.
+        /// @return True when both buffers were allocated and filled.
+        bool UploadMesh(const Ps3Vertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount, Ps3MeshBuffers& buffers);
+
+        /// Frees one uploaded mesh. Safe on a zeroed structure. The caller must have drained
+        /// GPU work first, exactly as for the renderer's own buffers.
+        /// @param buffers Buffers to release; zeroed on return.
+        void ReleaseMesh(Ps3MeshBuffers& buffers);
+
+        /// Submits one uploaded mesh with the given row-major model/view/projection matrix.
+        /// @param buffers Mesh to draw.
+        /// @param modelViewProjection Row-major matrix uploaded to the vertex program.
+        /// @return True when the draw was submitted.
+        bool DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection);
 
         /// Releases only the resources this renderer acquired. The caller must have drained
         /// GPU work successfully first; embedded program storage is static and never freed.

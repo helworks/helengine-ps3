@@ -12,6 +12,7 @@ class PlatformInfo;
 namespace helengine::ps3 {
     class Ps3ContentStreamSource;
     class Ps3InputBackend;
+    class Ps3RasterRenderer;
     class Ps3RenderManager2D;
     class Ps3RenderManager3D;
     class Ps3Video;
@@ -116,8 +117,9 @@ namespace helengine::ps3 {
 
         /// Constructs the adapters and Core, then initializes Core against them.
         /// @param video Video owner, used to describe the platform to Core. Must outlive this host.
+        /// @param renderer Raster renderer the 3D adapter draws authored geometry through. Must outlive this host.
         /// @return True when Core reached the initialized stage.
-        bool Initialize(Ps3Video& video);
+        bool Initialize(Ps3Video& video, Ps3RasterRenderer& renderer);
 
         /// Advances Core by one step.
         /// @param elapsedSeconds Wall-clock seconds since the previous step.
@@ -151,6 +153,9 @@ namespace helengine::ps3 {
 
         /// Returns why the host stopped, or None while it is healthy.
         Ps3CoreError Error() const;
+
+        /// Reports whether a startup scene finished loading.
+        bool SceneLoaded() const;
 
         /// Returns the number of completed frame cycles.
         std::uint32_t FrameCount() const;

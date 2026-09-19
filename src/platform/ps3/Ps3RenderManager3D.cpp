@@ -12,18 +12,51 @@
 #include "IDrawable3D.hpp"
 #include "IRenderQueue3D.hpp"
 #include "ObjectManager.hpp"
+#include "ModelAsset.hpp"
 #include "PlatformMaterialAsset.hpp"
+#include "float3.hpp"
 #include "runtime/native_list.hpp"
 #include "system/io/stream.hpp"
 
 #include "platform/ps3/Ps3RuntimeAssets.hpp"
+#include "platform/ps3/Ps3RasterRenderer.hpp"
+#include "platform/ps3/Ps3Vertex.hpp"
 #include "platform/ps3/Ps3Video.hpp"
 
 #include "runtime/native_exceptions.hpp"
 #include "runtime/native_runtime.hpp"
 
 namespace helengine::ps3 {
-    Ps3RenderManager3D::Ps3RenderManager3D(Ps3Video& video)
+    namespace {
+        /// Converts one engine matrix into the renderer's row-major storage.
+        ///
+        /// The vertex program multiplies column vectors, so the matrix reaching it must be
+        /// row-major with translation in the fourth row's counterpart. The engine stores
+        /// M11..M44 row by row with translation in M41..M43, which is the transpose of what
+        /// the program wants, so it is transposed here rather than in the shader.
+        Ps3Matrix4 ToRowMajor(const ::float4x4& matrix) {
+            Ps3Matrix4 result;
+            result.Values[0] = matrix.M11;
+            result.Values[1] = matrix.M21;
+            result.Values[2] = matrix.M31;
+            result.Values[3] = matrix.M41;
+            result.Values[4] = matrix.M12;
+            result.Values[5] = matrix.M22;
+            result.Values[6] = matrix.M32;
+            result.Values[7] = matrix.M42;
+            result.Values[8] = matrix.M13;
+            result.Values[9] = matrix.M23;
+            result.Values[10] = matrix.M33;
+            result.Values[11] = matrix.M43;
+            result.Values[12] = matrix.M14;
+            result.Values[13] = matrix.M24;
+            result.Values[14] = matrix.M34;
+            result.Values[15] = matrix.M44;
+            return result;
+        }
+    }
+
+    Ps3RenderManager3D::Ps3RenderManager3D(Ps3Video& video, Ps3RasterRenderer& renderer)
         : DrawCounter(0)
         , LoggedFirstDraw(false)
         , RaiseOnDraw(false)
@@ -31,6 +64,7 @@ namespace helengine::ps3 {
         , LoggedFirstModel(false)
         , MaterialCounter(0)
         , ModelCounter(0)
+        , Renderer(renderer)
         , Video(video)
         , ViewProjection(::float4x4::get_Identity())
         , VisitedDrawables(0)
@@ -159,17 +193,81 @@ namespace helengine::ps3 {
                         static_cast<double>(world.M43));
         }
 
-        // Geometry upload is the next step. The matrix is computed and reported above so the
-        // camera path can be checked against a running frame before any RSX buffers exist.
-        (void)modelViewProjection;
-        NoteSkip("model-without-geometry");
+        if (!model->HasGeometry()) {
+            NoteSkip("model-without-geometry");
+            return;
+        }
+        if (!Renderer.DrawIndexed(model->Buffers(), ToRowMajor(modelViewProjection))) {
+            NoteSkip("draw-submit-failed");
+            return;
+        }
+        ++SubmittedDrawables;
     }
 
     ::RuntimeModel* Ps3RenderManager3D::BuildModelFromRaw(::ModelAsset* data) {
-        (void)data;
-        std::printf("PS3_CORE_ERROR stage=BuildModelFromRaw reason=not-supported-in-v02-boot-gate\n");
-        he_cpp_raise(new ::NotSupportedException(
-            "The PlayStation 3 v0.2 boot gate builds no models. Authored geometry arrives with the scene milestone."));
+        if (data == nullptr) {
+            he_cpp_raise(new ::ArgumentNullException("data"));
+        }
+
+        Ps3RuntimeModel* model = new Ps3RuntimeModel();
+        Array<::float3>* positions = data->Positions;
+        const std::uint32_t vertexCount = positions == nullptr ? 0u : static_cast<std::uint32_t>(positions->get_Length());
+
+        // Indices arrive as 16 or 32 bit. The RSX draw below is 16 bit, so a 32-bit array is
+        // accepted only while every value fits; a larger mesh is refused by name rather than
+        // silently truncated into scrambled triangles.
+        Array<uint16_t>* indices16 = data->Indices16;
+        Array<uint32_t>* indices32 = data->Indices32;
+        const std::uint32_t indexCount = indices16 != nullptr
+            ? static_cast<std::uint32_t>(indices16->get_Length())
+            : (indices32 == nullptr ? 0u : static_cast<std::uint32_t>(indices32->get_Length()));
+
+        if (vertexCount == 0 || indexCount == 0) {
+            std::printf("PS3_CORE_MODEL_EMPTY vertices=%u indices=%u\n", vertexCount, indexCount);
+            return model;
+        }
+        if (vertexCount > 0xFFFFu) {
+            std::printf("PS3_CORE_MODEL_TOO_LARGE vertices=%u limit=65535\n", vertexCount);
+            return model;
+        }
+
+        Ps3Vertex* vertices = new Ps3Vertex[vertexCount];
+        for (std::uint32_t index = 0; index < vertexCount; ++index) {
+            const ::float3 position = (*positions)[static_cast<int32_t>(index)];
+            vertices[index].Position[0] = position.X;
+            vertices[index].Position[1] = position.Y;
+            vertices[index].Position[2] = position.Z;
+            // The vertex program has no material constant yet, so geometry is uploaded white
+            // and the cooked material colour is not applied. This is visible in the log.
+            vertices[index].Color[0] = 1.0f;
+            vertices[index].Color[1] = 1.0f;
+            vertices[index].Color[2] = 1.0f;
+            vertices[index].Color[3] = 1.0f;
+        }
+
+        u16* meshIndices = new u16[indexCount];
+        bool indicesFit = true;
+        for (std::uint32_t index = 0; index < indexCount && indicesFit; ++index) {
+            const std::uint32_t value = indices16 != nullptr
+                ? static_cast<std::uint32_t>((*indices16)[static_cast<int32_t>(index)])
+                : (*indices32)[static_cast<int32_t>(index)];
+            if (value > 0xFFFFu) {
+                indicesFit = false;
+                break;
+            }
+            meshIndices[index] = static_cast<u16>(value);
+        }
+
+        Ps3MeshBuffers buffers{ nullptr, 0, nullptr, 0, 0, 0 };
+        if (!indicesFit) {
+            std::printf("PS3_CORE_MODEL_INDEX_RANGE indices=%u reason=value-exceeds-16-bit\n", indexCount);
+        } else if (Renderer.UploadMesh(vertices, vertexCount, meshIndices, indexCount, buffers)) {
+            model->AdoptBuffers(buffers);
+        }
+
+        delete[] meshIndices;
+        delete[] vertices;
+        return model;
     }
 
     ::RuntimeMaterial* Ps3RenderManager3D::BuildMaterialFromCooked(::PlatformMaterialAsset* materialAsset) {
@@ -208,13 +306,18 @@ namespace helengine::ps3 {
         // The asset is read so a missing or malformed model is reported here rather than as
         // an empty draw later. Turning it into RSX buffers is the next milestone, so the
         // model returned carries no geometry yet and the log says so once.
-        ReadCookedAsset(cookedAssetPath, contentStreamSource, "model");
+        ::Asset* asset = ReadCookedAsset(cookedAssetPath, contentStreamSource, "model");
+        ::ModelAsset* modelAsset = dynamic_cast<::ModelAsset*>(asset);
+        if (modelAsset == nullptr) {
+            std::printf("PS3_CORE_ERROR stage=BuildModelFromCooked path=%s reason=not-a-model-asset\n", cookedAssetPath.c_str());
+            he_cpp_raise(new ::NotSupportedException("The PlayStation 3 renderer expects a cooked model payload."));
+        }
         if (!LoggedFirstModel) {
             LoggedFirstModel = true;
-            std::printf("PS3_CORE_MODEL_FIRST path=%s note=no-gpu-geometry-yet\n", cookedAssetPath.c_str());
+            std::printf("PS3_CORE_MODEL_FIRST path=%s\n", cookedAssetPath.c_str());
         }
         ++ModelCounter;
-        return new Ps3RuntimeModel();
+        return BuildModelFromRaw(modelAsset);
     }
 
     ::Asset* Ps3RenderManager3D::ReadCookedAsset(const std::string& cookedAssetPath, ::IContentStreamSource* contentStreamSource, const char* kind) {
