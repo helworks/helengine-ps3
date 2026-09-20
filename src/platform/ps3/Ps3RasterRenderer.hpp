@@ -27,8 +27,11 @@ namespace helengine::ps3 {
         /// RSX offset of the index buffer.
         u32 IndexBufferOffset;
 
-        /// Number of 16-bit indices uploaded.
+        /// Number of indices uploaded.
         u32 IndexCount;
+
+        /// True when the index buffer holds 32-bit values rather than 16-bit.
+        bool Uses32BitIndices;
 
         /// RSX-local bytes this mesh owns.
         u32 OwnedBytes;
@@ -61,11 +64,12 @@ namespace helengine::ps3 {
         /// Uploads one authored mesh into RSX memory.
         /// @param vertices Vertex array in the renderer's 28-byte layout.
         /// @param vertexCount Number of vertices.
-        /// @param indices Triangle-list indices.
+        /// @param indices Triangle-list indices, 16 or 32 bit as declared below.
         /// @param indexCount Number of indices; must be a multiple of three.
+        /// @param uses32BitIndices True when indices are 32 bit. RSX draws either width.
         /// @param buffers Receives the allocated buffers, or stays zeroed on failure.
         /// @return True when both buffers were allocated and filled.
-        bool UploadMesh(const Ps3Vertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount, Ps3MeshBuffers& buffers);
+        bool UploadMesh(const Ps3Vertex* vertices, u32 vertexCount, const void* indices, u32 indexCount, bool uses32BitIndices, Ps3MeshBuffers& buffers);
 
         /// Frees one uploaded mesh. Safe on a zeroed structure. The caller must have drained
         /// GPU work first, exactly as for the renderer's own buffers.

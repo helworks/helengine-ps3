@@ -13,6 +13,7 @@
 #include "IRenderQueue3D.hpp"
 #include "ObjectManager.hpp"
 #include "ModelAsset.hpp"
+#include "ModelAssetIndexData.hpp"
 #include "PlatformMaterialAsset.hpp"
 #include "float3.hpp"
 #include "runtime/native_list.hpp"
@@ -213,21 +214,14 @@ namespace helengine::ps3 {
         Array<::float3>* positions = data->Positions;
         const std::uint32_t vertexCount = positions == nullptr ? 0u : static_cast<std::uint32_t>(positions->get_Length());
 
-        // Indices arrive as 16 or 32 bit. The RSX draw below is 16 bit, so a 32-bit array is
-        // accepted only while every value fits; a larger mesh is refused by name rather than
-        // silently truncated into scrambled triangles.
-        Array<uint16_t>* indices16 = data->Indices16;
-        Array<uint32_t>* indices32 = data->Indices32;
-        const std::uint32_t indexCount = indices16 != nullptr
-            ? static_cast<std::uint32_t>(indices16->get_Length())
-            : (indices32 == nullptr ? 0u : static_cast<std::uint32_t>(indices32->get_Length()));
+        // The engine already resolves which index width a model uses and validates that only
+        // one is populated, so that decision is not repeated here. RSX draws either width.
+        ::ModelAssetIndexData* indexData = ::ModelAssetIndexData::Resolve(data);
+        const std::uint32_t indexCount = indexData == nullptr ? 0u : static_cast<std::uint32_t>(indexData->get_IndexCount());
+        const bool uses32BitIndices = indexData != nullptr && indexData->get_Uses32BitIndices();
 
         if (vertexCount == 0 || indexCount == 0) {
             std::printf("PS3_CORE_MODEL_EMPTY vertices=%u indices=%u\n", vertexCount, indexCount);
-            return model;
-        }
-        if (vertexCount > 0xFFFFu) {
-            std::printf("PS3_CORE_MODEL_TOO_LARGE vertices=%u limit=65535\n", vertexCount);
             return model;
         }
 
@@ -245,27 +239,31 @@ namespace helengine::ps3 {
             vertices[index].Color[3] = 1.0f;
         }
 
-        u16* meshIndices = new u16[indexCount];
-        bool indicesFit = true;
-        for (std::uint32_t index = 0; index < indexCount && indicesFit; ++index) {
-            const std::uint32_t value = indices16 != nullptr
-                ? static_cast<std::uint32_t>((*indices16)[static_cast<int32_t>(index)])
-                : (*indices32)[static_cast<int32_t>(index)];
-            if (value > 0xFFFFu) {
-                indicesFit = false;
-                break;
+        // Copied into a flat array because the generated arrays are not guaranteed contiguous
+        // in a form RSX can read directly.
+        Ps3MeshBuffers buffers{ nullptr, 0, nullptr, 0, 0, false, 0 };
+        if (uses32BitIndices) {
+            Array<uint32_t>* source = indexData->get_Indices32();
+            uint32_t* meshIndices = new uint32_t[indexCount];
+            for (std::uint32_t index = 0; index < indexCount; ++index) {
+                meshIndices[index] = (*source)[static_cast<int32_t>(index)];
             }
-            meshIndices[index] = static_cast<u16>(value);
+            if (Renderer.UploadMesh(vertices, vertexCount, meshIndices, indexCount, true, buffers)) {
+                model->AdoptBuffers(buffers);
+            }
+            delete[] meshIndices;
+        } else {
+            Array<uint16_t>* source = indexData->get_Indices16();
+            uint16_t* meshIndices = new uint16_t[indexCount];
+            for (std::uint32_t index = 0; index < indexCount; ++index) {
+                meshIndices[index] = (*source)[static_cast<int32_t>(index)];
+            }
+            if (Renderer.UploadMesh(vertices, vertexCount, meshIndices, indexCount, false, buffers)) {
+                model->AdoptBuffers(buffers);
+            }
+            delete[] meshIndices;
         }
 
-        Ps3MeshBuffers buffers{ nullptr, 0, nullptr, 0, 0, 0 };
-        if (!indicesFit) {
-            std::printf("PS3_CORE_MODEL_INDEX_RANGE indices=%u reason=value-exceeds-16-bit\n", indexCount);
-        } else if (Renderer.UploadMesh(vertices, vertexCount, meshIndices, indexCount, buffers)) {
-            model->AdoptBuffers(buffers);
-        }
-
-        delete[] meshIndices;
         delete[] vertices;
         return model;
     }

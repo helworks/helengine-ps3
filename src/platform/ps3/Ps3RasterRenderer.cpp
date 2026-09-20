@@ -184,8 +184,8 @@ namespace helengine::ps3 {
         return true;
     }
 
-    bool Ps3RasterRenderer::UploadMesh(const Ps3Vertex* vertices, u32 vertexCount, const u16* indices, u32 indexCount, Ps3MeshBuffers& buffers) {
-        buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, 0 };
+    bool Ps3RasterRenderer::UploadMesh(const Ps3Vertex* vertices, u32 vertexCount, const void* indices, u32 indexCount, bool uses32BitIndices, Ps3MeshBuffers& buffers) {
+        buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, false, 0 };
         if (!Initialized) {
             std::printf("PS3_MESH_ERROR stage=upload reason=renderer-not-initialized\n");
             return false;
@@ -196,7 +196,7 @@ namespace helengine::ps3 {
         }
 
         const u32 vertexBytes = vertexCount * static_cast<u32>(sizeof(Ps3Vertex));
-        const u32 indexBytes = indexCount * static_cast<u32>(sizeof(u16));
+        const u32 indexBytes = indexCount * (uses32BitIndices ? 4u : 2u);
         void* vertexBuffer = rsxMemalign(GeometryAlignment, vertexBytes);
         if (vertexBuffer == nullptr) {
             std::printf("PS3_MESH_ERROR stage=upload reason=vertex-alloc-failed bytes=%u\n", vertexBytes);
@@ -224,8 +224,8 @@ namespace helengine::ps3 {
 
         std::memcpy(vertexBuffer, vertices, vertexBytes);
         std::memcpy(indexBuffer, indices, indexBytes);
-        buffers = Ps3MeshBuffers{ vertexBuffer, vertexOffset, indexBuffer, indexOffset, indexCount, vertexBytes + indexBytes };
-        std::printf("PS3_MESH_UPLOADED vertices=%u indices=%u bytes=%u\n", vertexCount, indexCount, buffers.OwnedBytes);
+        buffers = Ps3MeshBuffers{ vertexBuffer, vertexOffset, indexBuffer, indexOffset, indexCount, uses32BitIndices, vertexBytes + indexBytes };
+        std::printf("PS3_MESH_UPLOADED vertices=%u indices=%u indexBits=%u bytes=%u\n", vertexCount, indexCount, uses32BitIndices ? 32u : 16u, buffers.OwnedBytes);
         return true;
     }
 
@@ -236,7 +236,7 @@ namespace helengine::ps3 {
         if (buffers.VertexBuffer != nullptr) {
             rsxFree(buffers.VertexBuffer);
         }
-        buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, 0 };
+        buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, false, 0 };
     }
 
     bool Ps3RasterRenderer::DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection) {
@@ -263,7 +263,8 @@ namespace helengine::ps3 {
         rsxSetCullFaceEnable(ContextValue, GCM_TRUE);
         rsxSetUserClipPlaneControl(ContextValue, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE,
                                    GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE);
-        rsxDrawIndexArray(ContextValue, GCM_TYPE_TRIANGLES, buffers.IndexBufferOffset, buffers.IndexCount, GCM_INDEX_TYPE_16B, GCM_LOCATION_RSX);
+        rsxDrawIndexArray(ContextValue, GCM_TYPE_TRIANGLES, buffers.IndexBufferOffset, buffers.IndexCount,
+                          buffers.Uses32BitIndices ? GCM_INDEX_TYPE_32B : GCM_INDEX_TYPE_16B, GCM_LOCATION_RSX);
         ++DrawCounter;
         return true;
     }
