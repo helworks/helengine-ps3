@@ -63,12 +63,12 @@ namespace helengine::ps3 {
 
         Ps3Video video;
         Ps3RasterRenderer renderer;
+        bool coreSceneActive = false;
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
         // Declared alongside video and renderer so the ordered shutdown below owns its
         // disposal, rather than leaving it to a destructor that runs after video teardown.
         Ps3RuntimeHost runtimeHost;
         bool coreReady = false;
-        bool coreSceneActive = false;
 #endif
         bool failed = false;
         bool videoReady = false;
