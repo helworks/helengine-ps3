@@ -5,8 +5,8 @@ v0.2 design commits to enabling exceptions and RTTI against the transpiler's def
 value below was measured, none assumed. Reproduce with:
 
 ```powershell
-powershell -NoProfile -File scripts/probe-core-abi.ps1
-powershell -NoProfile -File scripts/launch_in_emulator.ps1 -ArtifactPath <probe dir>\abi.self -RpcS3Path C:\dev\helworks\emus\rpcs3-v0.0.42-20013-2d103407\rpcs3.exe -Visible
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/probe-core-abi.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch_in_emulator.ps1 -ArtifactPath .ps3\toolchain\core-abi-<utc>\abi.self -RpcS3Path C:\dev\helworks\emus\rpcs3-v0.0.42-20013-2d103407\rpcs3.exe -Visible
 ```
 
 ## Measurements
@@ -27,7 +27,8 @@ Measured 2026-09-17 against SDK image
 | RTTI works at run time | yes | `dynamic_cast` down to the derived type resolved |
 | `std::string` works | yes | The caught exception's message survived into a `std::string` |
 
-Runtime evidence: `C:\dev\helworks\builds\helengine-ps3\core-abi-20260917-153606\emulator-runs\20260917-153643\TTY.log`.
+The runtime evidence path above is from the historical external-root run. New probe
+outputs and emulator logs are placed under `.ps3\toolchain\core-abi-<utc>\`.
 
 ## What the codegen profile consumes
 

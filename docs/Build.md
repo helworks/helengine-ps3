@@ -9,16 +9,17 @@ All commands run from the repository root in Windows PowerShell:
 cd C:\dev\helworks\helengine-ps3
 ```
 
-Outputs never go to the worktree or Temp. The external build root is
-`C:\dev\helworks\builds\helengine-ps3`:
+Generated state is kept in the ignored, repo-local `.ps3` directory. The source tree
+itself remains read-only to build containers, and no generated output is written to Temp:
 
 | Path | Content |
 |---|---|
-| `dependencies\ps3toolchain`, `dependencies\PSL1GHT` | Read-only reference checkouts of the pinned upstream revisions (not build inputs; the image clones its own). |
-| `dependencies\cg\` | NVIDIA Cg toolkit archive and its extracted `usr\` tree, mounted read-only at `/opt/cg` for shader conversion. |
-| `toolchain\prepare-<utc>.log`, `toolchain\probe-<utc>\` | SDK image build log and the toolchain probe outputs. |
-| `<build-id>\` | One directory per native build (see below). |
-| `script-tests-<utc>\` | Fixtures and outputs of the script contract tests. |
+| `.ps3\dependencies\cg\` | Locked NVIDIA Cg toolkit archive and its extracted `usr\` tree, mounted read-only at `/opt/cg` for shader conversion. |
+| `.ps3\toolchain\` | SDK image build logs and toolchain probe outputs. |
+| `.ps3\builds\<build-id>\` | One directory per native build (see below). |
+| `.ps3\generated-core\` | Default generated Core tree location when Core mode is used without an explicit override. |
+| `.ps3\user-settings\` | Repo-local platform settings written by the registration helper. |
+| `.ps3\contract-tests\` | Fixtures and outputs of the script contract tests. |
 
 ## 1. Dependency setup (once per lock change)
 
@@ -29,15 +30,17 @@ Docker Desktop must run Linux containers (`docker info --format '{{.OSType}}'` p
 no host or WSL SDK fallback: every PS3 compile and shader conversion happens inside the
 image built here.
 
-### 1.2 NVIDIA Cg toolkit (proprietary, user supplied)
+### 1.2 NVIDIA Cg toolkit (proprietary)
 
 PSL1GHT's `.vcg`/`.fcg` shader workflow needs `cgcomp`, which loads NVIDIA's discontinued,
 proprietary `libCg.so` at run time. The toolkit is deliberately **not** baked into the
-image. Download it yourself, accept NVIDIA's licence (`usr/local/Cg/docs/license.txt`
-inside the archive), and place the archive at:
+image. The setup script downloads the archive from NVIDIA, verifies its locked SHA-256,
+and stores it under `.ps3\dependencies\cg\`. The archive remains outside the Docker
+image; its extracted `usr\` tree is mounted read-only only while shaders or native code
+are compiled.
 
 ```text
-C:\dev\helworks\builds\helengine-ps3\dependencies\cg\Cg-3.1_April2012_x86_64.tgz
+.ps3\dependencies\cg\Cg-3.1_April2012_x86_64.tgz
 ```
 
 Source and expected identity (also recorded in `toolchain-lock.json`, `ShaderToolkit`):
@@ -46,15 +49,16 @@ Source and expected identity (also recorded in `toolchain-lock.json`, `ShaderToo
 |---|---|
 | URL | `https://developer.download.nvidia.com/cg/Cg_3.1/Cg-3.1_April2012_x86_64.tgz` |
 | Archive SHA-256 | `e8ff01e6cc38d1b3fd56a083f5860737dbd2f319a39037528fb1a74a89ae9878` |
-| Mount | `dependencies\cg\usr` → `/opt/cg`, read-only, only during shader/native builds |
+| Mount | `.ps3\dependencies\cg\usr` -> `/opt/cg`, read-only, only during shader/native builds |
 
 `prepare_toolchain.ps1` verifies the archive hash, extracts `usr\` next to it if needed
-and records the `libCg.so` hash. `build.ps1` refuses to run if that hash changes.
+and records the `libCg.so` hash. Native builds require that verified library to remain
+present; rerun setup if the local Cg state is replaced.
 
 ### 1.3 Build and verify the SDK image
 
 ```powershell
-powershell -NoProfile -File scripts/prepare_toolchain.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare_toolchain.ps1
 ```
 
 What it does:
@@ -85,11 +89,12 @@ The SPU toolchain and SPU libraries are not built in v0.1; SPU work is deferred.
 ## 2. Native build
 
 ```powershell
-powershell -NoProfile -File scripts/build.ps1 -BuildId <id> [-Mode Clear|Cube|Core] [-FixedPose] [-RunSeconds <0-3600>] [-FailurePoint None|AfterVideo|AfterRenderer] [-GeneratedCoreRoot <path>] [-CoreFailurePoint None|AfterCoreInitialize|DuringCoreDraw]
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -BuildId <id> [-Mode Clear|Cube|Core] [-FixedPose] [-RunSeconds <0-3600>] [-FailurePoint None|AfterVideo|AfterRenderer] [-GeneratedCoreRoot <path>] [-CoreFailurePoint None|AfterCoreInitialize|DuringCoreDraw]
 ```
 
-- `BuildId` names a fresh directory `C:\dev\helworks\builds\helengine-ps3\<id>`; an
-  existing directory is rejected.
+- `BuildId` names a fresh directory `.ps3\builds\<id>` by default; an existing directory
+  is rejected. An explicit `-OutputRoot` remains available for deliberate integration
+  workflows.
 - The locked image runs with `--network none`, the repository mounted read-only at `/src`,
   the build directory read-write at `/out` (working directory) and the Cg tree read-only
   at `/opt/cg`. No host SDK or Docker socket is mounted.
@@ -131,11 +136,11 @@ Artifacts in the build directory:
 ## 3. Launch in RPCS3
 
 ```powershell
-powershell -NoProfile -File scripts/launch_in_emulator.ps1 -ArtifactPath C:\dev\helworks\builds\helengine-ps3\<id>\helengine_ps3.self [-RpcS3Path <rpcs3.exe>] [-Visible]
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch_in_emulator.ps1 -ArtifactPath .ps3\builds\<id>\helengine_ps3.self [-RpcS3Path <rpcs3.exe>] [-Visible]
 ```
 
 The launcher validates, before starting anything, that the artifact lives under the
-external build root, that the directory's manifest names it as `LaunchArtifact` with a
+selected PS3 output root, that the directory's manifest names it as `LaunchArtifact` with a
 matching `BuildId`, that its SHA-256 matches, and that the manifest's lock hash matches
 the current `toolchain-lock.json`. The emulator path comes from `-RpcS3Path` or
 `HELENGINE_PS3_RPCS3_PATH`. Background runs use `--headless` in a hidden window, which
@@ -156,11 +161,11 @@ recorded in `docs/Validation.md`.
 ## 4. Host-side checks
 
 ```powershell
-powershell -NoProfile -File scripts/test-native.ps1 -BuildId <id>
-powershell -NoProfile -File scripts/tests/build-contract.tests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-native.ps1 -BuildId <id>
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/build-contract.tests.ps1
 ```
 
 `test-native.ps1` compiles the SDK-free geometry/transform sources and their tests with
-the host `g++` into `C:\dev\helworks\builds\helengine-ps3\<id>` and runs them.
-`build-contract.tests.ps1` exercises the build wrapper and launcher against test-owned
-fake docker/emulator fixtures under `script-tests-<utc>` (it needs a prepared lock).
+the host `g++` into `.ps3\builds\<id>` and runs them. `build-contract.tests.ps1` exercises
+the build wrapper and launcher against test-owned fake docker/emulator fixtures under
+`.ps3\contract-tests` (it needs a prepared lock).

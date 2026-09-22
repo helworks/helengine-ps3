@@ -4,7 +4,8 @@
 
 .DESCRIPTION
     Exercises the build wrapper and launcher against test-owned fixtures under a fresh
-    external script-tests-<id> directory. A fake `docker` command (a .cmd shim ahead of
+    repository-local .ps3\contract-tests\<id> directory by default. A fake `docker`
+    command (a .cmd shim ahead of
     the real one on PATH for this process only) simulates the SDK container so that
     nonzero builds, zero-byte outputs and successful builds can be checked without the
     real toolchain; a fake emulator script records whether it was launched and with which

@@ -1,7 +1,8 @@
 # PS3 v0.1 validation record
 
 All evidence below was produced on 2026-09-15/16 on the development PC with the
-artifacts under `C:\dev\helworks\builds\helengine-ps3\`. Emulator results are RPCS3
+artifacts under the then-current external build root. New builds and runs use the
+repo-local `.ps3\builds\` root. Emulator results are RPCS3
 results; nothing has run on PS3 hardware. Screenshots were not taken. Visual observation
 by a person: Helena confirmed the rotating cube visually in RPCS3 on 2026-09-16
 (`acceptance-cube-02`, `-Visible`). The host's own pixel readback of the displayed frame

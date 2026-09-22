@@ -20,32 +20,33 @@ for the observed evidence.
 ## Setup (once)
 
 1. Docker Desktop with Linux containers.
-2. NVIDIA Cg Toolkit 3.1 archive (proprietary, user supplied, never embedded in the image) at
-   `C:\dev\helworks\builds\helengine-ps3\dependencies\cg\Cg-3.1_April2012_x86_64.tgz`.
-3. RPCS3 with official PS3 system software installed (`rpcs3.exe --installfw <PS3UPDAT.PUP>`).
+2. RPCS3 with official PS3 system software installed (`rpcs3.exe --installfw <PS3UPDAT.PUP>`).
    Set `HELENGINE_PS3_RPCS3_PATH` or pass `-RpcS3Path`.
 
 ```powershell
 cd C:\dev\helworks\helengine-ps3
-powershell -NoProfile -File scripts/prepare_toolchain.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare_toolchain.ps1
 ```
+
+The setup script downloads and verifies the proprietary NVIDIA Cg 3.1 archive into
+`.ps3\dependencies\cg`, extracts its `usr\` tree, and builds the pinned Docker image.
+All generated toolchain state stays under `.ps3`.
 
 ## Build
 
 ```powershell
-powershell -NoProfile -File scripts/build.ps1 -BuildId acceptance-cube-01 -RunSeconds 600
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -BuildId acceptance-cube-01 -RunSeconds 600
 ```
 
 Options: `-Mode Clear|Cube|Core` (default Cube), `-FixedPose` (documented pose 0.6 rad;
 `-FixedPoseRadians` selects another diagnostic orientation), `-RunSeconds 0-3600`
 (0 = until the system requests exit), `-FailurePoint None|AfterVideo|AfterRenderer`.
-Outputs land in `C:\dev\helworks\builds\helengine-ps3\<BuildId>\` with a hashed
-`build-manifest.json`.
+Outputs land in `.ps3\builds\<BuildId>\` with a hashed `build-manifest.json`.
 
 To build with Core compiled in, name a generated tree:
 
 ```powershell
-powershell -NoProfile -File scripts/build.ps1 -BuildId core-boot-01 -Mode Core -RunSeconds 12 -GeneratedCoreRoot <path to generated tree>
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -BuildId core-boot-01 -Mode Core -RunSeconds 12 -GeneratedCoreRoot <path to generated tree>
 ```
 
 `-CoreFailurePoint None|AfterCoreInitialize|DuringCoreDraw` exercises the lifecycle gates.
@@ -56,7 +57,7 @@ Core parameters are refused outside Core mode.
 ## Run in RPCS3
 
 ```powershell
-powershell -NoProfile -File scripts/launch_in_emulator.ps1 -ArtifactPath C:\dev\helworks\builds\helengine-ps3\acceptance-cube-01\helengine_ps3.self -Visible
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch_in_emulator.ps1 -ArtifactPath .ps3\builds\acceptance-cube-01\helengine_ps3.self -Visible
 ```
 
 `-Visible` is required to see (and to render) anything: RPCS3's headless mode forces the
@@ -66,8 +67,8 @@ are useful. Each run is recorded under `<build>\emulator-runs\<utc>\`.
 ## Checks
 
 ```powershell
-powershell -NoProfile -File scripts/test-native.ps1 -BuildId acceptance-math-01
-powershell -NoProfile -File scripts/tests/build-contract.tests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-native.ps1 -BuildId acceptance-math-01
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tests/build-contract.tests.ps1
 ```
 
 ## Known blockers and limits
