@@ -1,5 +1,8 @@
-# Canonical build outputs live outside the worktree under C:\dev\helworks\builds\helengine-ps3.
-# These patterns only guard against generated products accidentally landing in the repository.
+# Repo-local PS3 toolchain caches, generated trees, builds and logs.
+/.ps3/*
+!/.ps3/.gitkeep
+
+# These patterns also guard against generated products landing outside .ps3.
 /build/
 /out/
 *.elf
