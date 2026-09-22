@@ -41,6 +41,13 @@ function ConvertTo-LockPath {
     return $AbsolutePath
 }
 
+function ConvertTo-LinuxLineEndings {
+    param([Parameter(Mandatory)][string]$Text)
+    $crlf = [string]::Concat([char]13, [char]10)
+    $lf = [string][char]10
+    return $Text.Replace($crlf, $lf).Replace([string][char]13, $lf)
+}
+
 function Get-FileSha256 {
     param([string]$Path)
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -301,6 +308,7 @@ printf 'BuilderAptPackagesSha256=%s\n' "$(sha256sum $PS3DEV/helengine/builder-ap
 '@
 # The script is base64-encoded so no embedded quote survives Windows PowerShell's native
 # argument quoting; bash decodes and runs it with -e inside the container.
+$verifyScript = ConvertTo-LinuxLineEndings $verifyScript
 $encodedVerifyScript = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($verifyScript))
 $metadataLines = Invoke-CheckedNative 'docker' @('run', '--rm', '--network', 'none', '--entrypoint', '/bin/bash', $imageTag, '-c', "echo $encodedVerifyScript | base64 -d | bash -e")
 $metadataLines | ForEach-Object { Write-Output "  $_" }

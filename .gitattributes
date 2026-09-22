@@ -1,0 +1,2 @@
+# Docker applies these patches inside Linux containers; preserve their LF bytes on Windows checkouts.
+docker/patches/*.patch text eol=lf

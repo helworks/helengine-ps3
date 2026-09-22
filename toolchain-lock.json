@@ -37,8 +37,8 @@
                                           }
                                       ],
                    "SourceArchiveVerification":  "sha256 table in ps3toolchain/archives/archives.txt at the pinned commit; GCC in-tree gmp/mpfr/mpc/isl are fetched and sha512-verified by the pinned release\u0027s contrib/download_prerequisites",
-                   "DockerfileSha256":  "2af17d639e7d3bca42cdab176228fdc016b2701a9e3ca5301fdc7f722e935c62",
-                   "DockerIgnoreSha256":  "891c7492e0d1c510d142faf736dc54ddf2518b35496585966238c28c4a2d5254",
+                   "DockerfileSha256":  "a2e47d52eb1a65a97c7b01597381c9d85950c5b7120f69220ab5b472d0a9d479",
+                   "DockerIgnoreSha256":  "47a5d5fb8dc0086ba0a9c8d5dacff3ecba4c7a878a14629b6de1fb32ec103221",
                    "Psl1ghtPatches":  [
                                           {
                                               "Name":  "0001-psl1ght-rsx-context-callback-memory-clobber.patch",
@@ -59,11 +59,11 @@
                           "LibCgSha256":  "01c8bbbd3c373cb5f337ab0fd7a252b9d01212d35ffc1e2ea2ea8de9d1e557d3"
                       },
     "ResolvedImage":  {
-                          "Tag":  "helengine-ps3-sdk:2f38118b9cce65751080e3c6849b2338b9c93f9d529f36a270af05490622c779",
-                          "ImageId":  "sha256:b19ffd3cfb54c04835a0e32989dfa59205764802469a2faa89aa2519734b8b3f",
-                          "InputsHash":  "2f38118b9cce65751080e3c6849b2338b9c93f9d529f36a270af05490622c779",
-                          "PreparedAtUtc":  "20260916-025552",
-                          "PrepareLog":  ".ps3/toolchain/prepare-20260916-025552.log",
+                          "Tag":  "helengine-ps3-sdk:5985b8a0064be1e007e740131836e138aa582c464fe292411efb6f82c43e18ad",
+                          "ImageId":  "sha256:da929def76aacc0a5f499e1b8be143912062ab4a93b206277ead4de9530fe411",
+                          "InputsHash":  "5985b8a0064be1e007e740131836e138aa582c464fe292411efb6f82c43e18ad",
+                          "PreparedAtUtc":  "20260922-200735",
+                          "PrepareLog":  ".ps3/toolchain/prepare-20260922-200735.log",
                           "CompilerC":  "ppu-gcc (GCC) 13.2.0",
                           "CompilerCxx":  "ppu-g++ (GCC) 13.2.0",
                           "CompilerTarget":  "powerpc64-ps3-elf",
@@ -84,7 +84,7 @@
                           "BuilderAptPackagesSha256":  "f56ebc324a2a366c2841e5c8241da95aa250f65c804c80c16b4c984941dad252",
                           "Endian":  "powerpc64-ps3-elf big endian",
                           "Architecture":  "PowerPC64 (Cell PPU)",
-                          "ProbeDirectory":  ".ps3/toolchain/probe-20260916-025552",
+                          "ProbeDirectory":  ".ps3/toolchain/probe-20260922-200735",
                           "ProbeVpoSha256":  "92853ff5e14ce1f70942eb1ee521a6d8858c136dc9bf11077e59b46b9472c711",
                           "ProbeFpoSha256":  "6ba4a0d6d6e475b1835def8bf5fe5daedd40d1989bf1473624f2f85a7958639c",
                           "ProbeElfSha256":  "abfe83fa6083cb22e9bed814316931be8b6a76c7fad7dd65161cf86f917f69da"

@@ -22,6 +22,12 @@ function Assert-True {
     Write-Output "PASS $Name"
 }
 
+$attributesPath = Join-Path $repoRoot '.gitattributes'
+Assert-True 'PSL1GHT patch has an LF checkout rule' ((Test-Path -LiteralPath $attributesPath -PathType Leaf) -and ((Get-Content -LiteralPath $attributesPath -Raw) -match 'docker/patches/\*\.patch\s+text\s+eol=lf'))
+$patchPath = Join-Path $repoRoot 'docker\patches\0001-psl1ght-rsx-context-callback-memory-clobber.patch'
+$patchBytes = [IO.File]::ReadAllBytes($patchPath)
+Assert-True 'PSL1GHT patch is LF-only in the checkout' (@($patchBytes | Where-Object { $_ -eq 13 }).Count -eq 0)
+
 function Assert-Throws {
     param([string]$Name, [scriptblock]$Action, [string]$ExpectedMessage)
     try {
