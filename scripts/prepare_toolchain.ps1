@@ -26,6 +26,7 @@ Set-StrictMode -Version Latest
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
 . (Join-Path $repoRoot 'scripts\ps3-cg.ps1')
+$usingDefaultStateRoot = [string]::IsNullOrWhiteSpace($StateRoot)
 $StateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
 $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 $dockerDirectory = Join-Path $repoRoot 'docker'
@@ -33,6 +34,12 @@ $dockerfilePath = Join-Path $dockerDirectory 'Dockerfile'
 $dockerIgnorePath = Join-Path $dockerDirectory '.dockerignore'
 $toolchainRoot = Join-Path $StateRoot 'toolchain'
 $timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+
+function ConvertTo-LockPath {
+    param([string]$AbsolutePath, [string]$DefaultRelativePath)
+    if ($usingDefaultStateRoot) { return $DefaultRelativePath }
+    return $AbsolutePath
+}
 
 function Get-FileSha256 {
     param([string]$Path)
@@ -359,7 +366,7 @@ $lock.ResolvedImage = [PSCustomObject]@{
     ImageId = $imageId
     InputsHash = $inputsHash
     PreparedAtUtc = $timestamp
-    PrepareLog = $prepareLogPath
+    PrepareLog = ConvertTo-LockPath -AbsolutePath $prepareLogPath -DefaultRelativePath ".ps3/toolchain/prepare-$timestamp.log"
     CompilerC = $metadata['CompilerC']
     CompilerCxx = $metadata['CompilerCxx']
     CompilerTarget = $metadata['CompilerTarget']
@@ -380,7 +387,7 @@ $lock.ResolvedImage = [PSCustomObject]@{
     BuilderAptPackagesSha256 = $metadata['BuilderAptPackagesSha256']
     Endian = 'powerpc64-ps3-elf big endian'
     Architecture = 'PowerPC64 (Cell PPU)'
-    ProbeDirectory = $probeDirectory
+    ProbeDirectory = ConvertTo-LockPath -AbsolutePath $probeDirectory -DefaultRelativePath ".ps3/toolchain/probe-$timestamp"
     ProbeVpoSha256 = Get-FileSha256 (Join-Path $probeDirectory 'probe.vpo')
     ProbeFpoSha256 = Get-FileSha256 (Join-Path $probeDirectory 'probe.fpo')
     ProbeElfSha256 = Get-FileSha256 (Join-Path $probeDirectory 'probe.elf')
