@@ -52,8 +52,8 @@
                           "ArchiveSha256":  "e8ff01e6cc38d1b3fd56a083f5860737dbd2f319a39037528fb1a74a89ae9878",
                           "Url":  "https://developer.download.nvidia.com/cg/Cg_3.1/Cg-3.1_April2012_x86_64.tgz",
                           "License":  "NVIDIA License For Customer Use of NVIDIA Software (usr/local/Cg/docs/license.txt in the archive). Proprietary; kept out of image layers and mounted read-only at build time.",
-                          "ExternalRoot":  "C:\\dev\\helworks\\builds\\helengine-ps3\\dependencies\\cg",
-                          "MountSource":  "C:\\dev\\helworks\\builds\\helengine-ps3\\dependencies\\cg\\usr",
+                          "ExternalRoot":  ".ps3/dependencies/cg",
+                          "MountSource":  ".ps3/dependencies/cg/usr",
                           "MountTarget":  "/opt/cg",
                           "LibraryPath":  "lib64/libCg.so",
                           "LibCgSha256":  "01c8bbbd3c373cb5f337ab0fd7a252b9d01212d35ffc1e2ea2ea8de9d1e557d3"
@@ -63,7 +63,7 @@
                           "ImageId":  "sha256:b19ffd3cfb54c04835a0e32989dfa59205764802469a2faa89aa2519734b8b3f",
                           "InputsHash":  "2f38118b9cce65751080e3c6849b2338b9c93f9d529f36a270af05490622c779",
                           "PreparedAtUtc":  "20260916-025552",
-                          "PrepareLog":  "C:\\dev\\helworks\\builds\\helengine-ps3\\toolchain\\prepare-20260916-025552.log",
+                          "PrepareLog":  ".ps3/toolchain/prepare-20260916-025552.log",
                           "CompilerC":  "ppu-gcc (GCC) 13.2.0",
                           "CompilerCxx":  "ppu-g++ (GCC) 13.2.0",
                           "CompilerTarget":  "powerpc64-ps3-elf",
@@ -84,7 +84,7 @@
                           "BuilderAptPackagesSha256":  "f56ebc324a2a366c2841e5c8241da95aa250f65c804c80c16b4c984941dad252",
                           "Endian":  "powerpc64-ps3-elf big endian",
                           "Architecture":  "PowerPC64 (Cell PPU)",
-                          "ProbeDirectory":  "C:\\dev\\helworks\\builds\\helengine-ps3\\toolchain\\probe-20260916-025552",
+                          "ProbeDirectory":  ".ps3/toolchain/probe-20260916-025552",
                           "ProbeVpoSha256":  "92853ff5e14ce1f70942eb1ee521a6d8858c136dc9bf11077e59b46b9472c711",
                           "ProbeFpoSha256":  "6ba4a0d6d6e475b1835def8bf5fe5daedd40d1989bf1473624f2f85a7958639c",
                           "ProbeElfSha256":  "abfe83fa6083cb22e9bed814316931be8b6a76c7fad7dd65161cf86f917f69da"

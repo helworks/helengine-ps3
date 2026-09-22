@@ -9,14 +9,14 @@
     build argument, verifies the compiler and SDK tools inside the resulting image,
     verifies the read-only NVIDIA Cg toolkit mount, compiles a probe vertex/fragment pair
     through the pinned ppu_rules, and writes the verified image identity into the
-    ResolvedImage section. The build log lands under the external PS3 build root.
+    ResolvedImage section. State and logs land under the repository's .ps3 directory.
 
     Command contract:
         powershell -NoProfile -File scripts/prepare_toolchain.ps1
 #>
 [CmdletBinding()]
 param(
-    [string]$ExternalRoot = 'C:\dev\helworks\builds\helengine-ps3',
+    [Alias('ExternalRoot')][string]$StateRoot = '',
     [ValidateRange(1, 64)][int]$BuildJobs = 8
 )
 
@@ -24,12 +24,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$ExternalRoot = [IO.Path]::GetFullPath($ExternalRoot)
+. (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+. (Join-Path $repoRoot 'scripts\ps3-cg.ps1')
+$StateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
 $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 $dockerDirectory = Join-Path $repoRoot 'docker'
 $dockerfilePath = Join-Path $dockerDirectory 'Dockerfile'
 $dockerIgnorePath = Join-Path $dockerDirectory '.dockerignore'
-$toolchainRoot = Join-Path $ExternalRoot 'toolchain'
+$toolchainRoot = Join-Path $StateRoot 'toolchain'
 $timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
 
 function Get-FileSha256 {
@@ -212,6 +214,28 @@ $inputsHash = Get-TextSha256 $canonicalInputs
 $imageTag = "helengine-ps3-sdk:$inputsHash"
 Write-Output "Inputs hash $inputsHash -> $imageTag"
 
+# --- Acquire and verify the proprietary Cg input ----------------------------------
+# Cg is kept outside Git and outside the Docker image layer. Downloading and checking
+# it before the image build makes the one-time setup fail early when the vendor input
+# is unavailable or corrupt.
+$shaderToolkit = $lock.ShaderToolkit
+$cgArchivePath = Ensure-Ps3CgArchive -ShaderToolkit $shaderToolkit -StateRoot $StateRoot
+$cgRoot = Split-Path -Parent $cgArchivePath
+$cgMountSource = Join-Path $cgRoot 'usr'
+$cgLibraryPath = Join-Path $cgMountSource ($shaderToolkit.LibraryPath -replace '/', '\')
+if (-not (Test-Path -LiteralPath $cgLibraryPath -PathType Leaf)) {
+    Write-Output "Extracting Cg toolkit usr/ tree to $cgMountSource"
+    Invoke-CheckedNative 'tar' @('-xzf', $cgArchivePath, '-C', $cgRoot, './usr') | Out-Null
+}
+if (-not (Test-Path -LiteralPath $cgLibraryPath -PathType Leaf)) {
+    throw "Cg toolkit extraction did not produce $cgLibraryPath"
+}
+$libCgHash = Get-FileSha256 $cgLibraryPath
+if (-not [string]::IsNullOrWhiteSpace($shaderToolkit.LibCgSha256) -and $shaderToolkit.LibCgSha256 -ne $libCgHash) {
+    throw "libCg.so hash changed. Expected $($shaderToolkit.LibCgSha256), found $libCgHash."
+}
+$shaderToolkit.LibCgSha256 = $libCgHash
+
 # --- Build the image --------------------------------------------------------------
 $buildArgs = @(
     'build',
@@ -277,32 +301,6 @@ $metadata = Read-KeyValueLines $metadataLines
 if ($metadata['CompilerTarget'] -ne 'powerpc64-ps3-elf') { throw "Unexpected compiler target: $($metadata['CompilerTarget'])" }
 if ($metadata['Ps3ToolchainCommit'] -ne $inputs.Ps3ToolchainCommit) { throw "Recorded ps3toolchain commit mismatch: $($metadata['Ps3ToolchainCommit'])" }
 if ($metadata['Psl1ghtCommit'] -ne $inputs.Psl1ghtCommit) { throw "Recorded PSL1GHT commit mismatch: $($metadata['Psl1ghtCommit'])" }
-
-# --- Verify the proprietary Cg toolkit mount (kept outside the image) -------------
-$shaderToolkit = $lock.ShaderToolkit
-$cgRoot = [IO.Path]::GetFullPath($shaderToolkit.ExternalRoot)
-$cgArchivePath = Join-Path $cgRoot $shaderToolkit.Archive
-$cgMountSource = [IO.Path]::GetFullPath($shaderToolkit.MountSource)
-$cgLibraryPath = Join-Path $cgMountSource ($shaderToolkit.LibraryPath -replace '/', '\')
-if (-not (Test-Path -LiteralPath $cgArchivePath -PathType Leaf)) {
-    throw "NVIDIA Cg toolkit archive is required at $cgArchivePath. Download $($shaderToolkit.Url) (licence: $($shaderToolkit.License)) and place it there; it is never embedded in the image."
-}
-$cgArchiveHash = Get-FileSha256 $cgArchivePath
-if ($cgArchiveHash -ne $shaderToolkit.ArchiveSha256) {
-    throw "Cg toolkit archive hash mismatch. Expected $($shaderToolkit.ArchiveSha256), found $cgArchiveHash."
-}
-if (-not (Test-Path -LiteralPath $cgLibraryPath -PathType Leaf)) {
-    Write-Output "Extracting Cg toolkit usr/ tree to $cgMountSource"
-    Invoke-CheckedNative 'tar' @('-xzf', $cgArchivePath, '-C', $cgRoot, './usr') | Out-Null
-}
-if (-not (Test-Path -LiteralPath $cgLibraryPath -PathType Leaf)) {
-    throw "Cg toolkit extraction did not produce $cgLibraryPath"
-}
-$libCgHash = Get-FileSha256 $cgLibraryPath
-if (-not [string]::IsNullOrWhiteSpace($shaderToolkit.LibCgSha256) -and $shaderToolkit.LibCgSha256 -ne $libCgHash) {
-    throw "libCg.so hash changed. Expected $($shaderToolkit.LibCgSha256), found $libCgHash."
-}
-$shaderToolkit.LibCgSha256 = $libCgHash
 
 # --- Probe: compile a vertex/fragment pair through the pinned ppu_rules and a PPU ELF
 $probeDirectory = Join-Path $toolchainRoot "probe-$timestamp"
