@@ -9,7 +9,7 @@
     so this script reads it from the project file rather than hardcoding a value that would
     silently stop matching.
 
-    The entry is written into an isolated root under the external build directory rather
+    The entry is written into an isolated root under the repository-local .ps3 directory
     than into C:\dev\helworks\helengine\user_settings\platforms.json. That file is live,
     untracked and shared with every other platform on this machine, and a mistake there
     would break unrelated targets. Point the editor at this root by exporting
@@ -21,7 +21,7 @@
 [CmdletBinding()]
 param(
     [string]$ProjectFile = 'C:\dev\helprojs\demodisc\project.heproj',
-    [string]$ExternalRoot = 'C:\dev\helworks\builds\helengine-ps3',
+    [Alias('ExternalRoot')][string]$StateRoot = '',
     [ValidateSet('Release', 'Debug')][string]$Configuration = 'Release'
 )
 
@@ -29,12 +29,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$settingsRoot = Join-Path ([IO.Path]::GetFullPath($ExternalRoot)) 'user-settings'
+. (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+$StateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
+$settingsRoot = Join-Path $StateRoot 'user-settings'
 $manifestPath = Join-Path $settingsRoot 'platforms.json'
 # Pinned explicitly rather than left to the editor's default, so the regenerated tree lands
 # somewhere known and can be compiled directly by scripts/build.ps1 -Mode Core without
 # hunting through build caches for it.
-$generatedCoreRoot = Join-Path ([IO.Path]::GetFullPath($ExternalRoot)) 'generated-core'
+$generatedCoreRoot = Join-Path $StateRoot 'generated-core'
 $builderAssembly = Join-Path $repoRoot "builder\bin\$Configuration\net9.0\helengine.ps3.builder.dll"
 $pluginManifest = Join-Path $repoRoot 'platform-plugin.json'
 

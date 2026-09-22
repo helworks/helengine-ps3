@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Builds tests/native/Ps3CubeTests.cpp together with the SDK-free sources under
-    src/platform/ps3 into a fresh external directory
-    C:\dev\helworks\builds\helengine-ps3\<BuildId>, runs the resulting executable and
+    src/platform/ps3 into a fresh repository-local .ps3/builds/<BuildId> directory,
+    runs the resulting executable and
     propagates its exit code. Nothing is written to the worktree or Temp.
 
     Command contract:
@@ -15,7 +15,7 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
     [string]$BuildId,
-    [string]$OutputRoot = 'C:\dev\helworks\builds\helengine-ps3',
+    [string]$OutputRoot = '',
     [string]$HostCompiler = 'g++'
 )
 
@@ -23,11 +23,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
-$repoPrefix = $repoRoot.TrimEnd('\', '/') + '\'
-if ($OutputRoot.Equals($repoRoot, [StringComparison]::OrdinalIgnoreCase) -or $OutputRoot.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "OutputRoot must be outside the source worktree: $OutputRoot"
-}
+. (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+$OutputRoot = Resolve-Ps3OutputRoot -RepoRoot $repoRoot -RequestedRoot $OutputRoot
 $buildRoot = Join-Path $OutputRoot $BuildId
 if (Test-Path -LiteralPath $buildRoot) {
     throw "Refusing to reuse existing build directory: $buildRoot"

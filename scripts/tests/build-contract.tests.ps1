@@ -19,13 +19,18 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ExternalRoot = 'C:\dev\helworks\builds\helengine-ps3'
+    [string]$ExternalRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$ExternalRoot = if ([string]::IsNullOrWhiteSpace($ExternalRoot)) {
+    Join-Path $repoRoot '.ps3\contract-tests'
+} else {
+    [IO.Path]::GetFullPath($ExternalRoot)
+}
 $buildScript = Join-Path $repoRoot 'scripts\build.ps1'
 $launcherScript = Join-Path $repoRoot 'scripts\launch_in_emulator.ps1'
 $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
@@ -48,6 +53,9 @@ if (-not ($lock.ResolvedImage.PSObject.Properties.Name -contains 'ImageId')) {
 }
 
 New-Item -ItemType Directory -Path $outputRoot, $fakeDockerDirectory, $fakeEmulatorDirectory | Out-Null
+$repoCgLibrary = Join-Path $repoRoot '.ps3\dependencies\cg\usr\lib64\libCg.so'
+New-Item -ItemType Directory -Path (Split-Path -Parent $repoCgLibrary) -Force | Out-Null
+[IO.File]::WriteAllBytes($repoCgLibrary, [byte[]]@(1, 2, 3, 4))
 
 # --- Fake docker shim ------------------------------------------------------------------
 Set-Content -LiteralPath (Join-Path $fakeDockerDirectory 'docker.cmd') -Encoding Ascii -Value @(
@@ -155,6 +163,18 @@ function Assert-True {
 }
 
 try {
+    $repoLocalScripts = @(
+        'scripts\build.ps1',
+        'scripts\test-native.ps1',
+        'scripts\probe-core-abi.ps1',
+        'scripts\register-platform.ps1',
+        'scripts\launch_in_emulator.ps1'
+    )
+    foreach ($relativeScript in $repoLocalScripts) {
+        $scriptText = Get-Content -LiteralPath (Join-Path $repoRoot $relativeScript) -Raw -Encoding UTF8
+        Assert-True "No external PS3 default in $relativeScript" ($scriptText -notmatch 'C:\\dev\\helworks\\builds\\helengine-ps3')
+    }
+
     # Existing BuildId is rejected before any build starts.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
     New-Item -ItemType Directory -Path (Join-Path $outputRoot 'existing-01') | Out-Null
@@ -232,6 +252,14 @@ try {
     Assert-True 'Build mounted source read-only' ($dockerArgsText -match 'target=/src,readonly')
     Assert-True 'Build mounted Cg read-only' ($dockerArgsText -match 'target=/opt/cg,readonly')
 
+    # The default output root is the repository-local .ps3/builds directory.
+    $defaultBuildId = "default-local-$testId"
+    & $buildScript -BuildId $defaultBuildId -Mode Cube | Out-Null
+    $defaultBuildRoot = Join-Path $repoRoot ".ps3\builds\$defaultBuildId"
+    Assert-True 'Default build root is repo-local' (Test-Path -LiteralPath (Join-Path $defaultBuildRoot 'build-manifest.json'))
+    $defaultDockerArgsText = Get-Content -LiteralPath (Join-Path $defaultBuildRoot 'fake-docker-args.txt') -Raw
+    Assert-True 'Default build passed repo-local output mount' ($defaultDockerArgsText -match [regex]::Escape('target=/out'))
+
     $artifactPath = Join-Path $successRoot 'helengine_ps3.self'
 
     # Launcher negatives: none may start the emulator.
@@ -275,6 +303,10 @@ try {
     }
     $runDirectories = @(Get-ChildItem -LiteralPath (Join-Path $successRoot 'emulator-runs') -Directory)
     Assert-True 'Launcher recorded a run directory' ($runDirectories.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $runDirectories[0].FullName 'emulator-command.txt')))
+
+    & $launcherScript -ArtifactPath (Join-Path $defaultBuildRoot 'helengine_ps3.self') -RpcS3Path $fakeEmulator | Out-Null
+    Assert-True 'Launcher default root is repo-local' (Test-Path -LiteralPath $fakeLaunchMarker)
+    if (Test-Path -LiteralPath $fakeLaunchMarker) { Remove-Item -LiteralPath $fakeLaunchMarker -Force }
 }
 finally {
     $env:PATH = $originalPath

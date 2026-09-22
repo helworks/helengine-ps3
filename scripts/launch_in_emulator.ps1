@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Validates, before starting anything, that the artifact lives inside a build directory
-    under the external PS3 build root, that the directory's build-manifest.json names it
+    under the selected PS3 output root, that the directory's build-manifest.json names it
     as the launch artifact with a matching BuildId, that its SHA-256 matches the manifest
     record and that the manifest was produced against the current toolchain lock. A
     missing emulator, missing manifest or any mismatch is an error. Background launches
@@ -20,14 +20,15 @@ param(
     [Parameter(Mandatory)][string]$ArtifactPath,
     [string]$RpcS3Path = $env:HELENGINE_PS3_RPCS3_PATH,
     [switch]$Visible,
-    [string]$OutputRoot = 'C:\dev\helworks\builds\helengine-ps3'
+    [string]$OutputRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
+. (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+$OutputRoot = Resolve-Ps3OutputRoot -RepoRoot $repoRoot -RequestedRoot $OutputRoot
 $ArtifactPath = [IO.Path]::GetFullPath($ArtifactPath)
 $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 
@@ -39,7 +40,7 @@ function Get-FileSha256 {
 # --- Artifact containment and manifest identity ---------------------------------------
 $outputPrefix = $OutputRoot.TrimEnd('\', '/') + '\'
 if (-not $ArtifactPath.StartsWith($outputPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Artifact must live under the external build root ${OutputRoot}: $ArtifactPath"
+    throw "Artifact must live under the PS3 output root ${OutputRoot}: $ArtifactPath"
 }
 if (-not (Test-Path -LiteralPath $ArtifactPath -PathType Leaf)) {
     throw "Artifact does not exist; refusing to launch: $ArtifactPath"
@@ -119,6 +120,17 @@ Set-Content -LiteralPath (Join-Path $runRoot 'emulator-command.txt') -Encoding U
     "Visible=$([bool]$Visible)",
     "StartedUtc=$runStamp"
 )
+$processPath = [Environment]::GetEnvironmentVariable('Path', 'Process')
+if ([string]::IsNullOrWhiteSpace($processPath)) {
+    $processPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
+}
+# Windows PowerShell can inherit both Path and PATH from the host harness. Its
+# Start-Process environment conversion treats those names as case-insensitive and
+# fails before launching. Keep one canonical Path entry for this child process.
+[Environment]::SetEnvironmentVariable('PATH', $null, 'Process')
+if (-not [string]::IsNullOrWhiteSpace($processPath)) {
+    [Environment]::SetEnvironmentVariable('Path', $processPath, 'Process')
+}
 $process = Start-Process -FilePath $RpcS3Path -ArgumentList $argumentList -WorkingDirectory (Split-Path -Parent $RpcS3Path) -WindowStyle $windowStyle -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru -Wait
 $exitCode = $process.ExitCode
 Add-Content -LiteralPath (Join-Path $runRoot 'emulator-command.txt') -Encoding UTF8 -Value @("ExitCode=$exitCode", "FinishedUtc=$((Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))")

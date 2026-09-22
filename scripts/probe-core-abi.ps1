@@ -16,7 +16,7 @@
       dynamic_cast, then prints every value. Proving unwinding really works on GameOS
       requires running it, which scripts/launch_in_emulator.ps1 does in a later step.
 
-    Outputs land in C:\dev\helworks\builds\helengine-ps3\core-abi-<utc>\ and the measured
+    Outputs land in .ps3\toolchain\core-abi-<utc>\ and the measured
     values are written to abi-facts.json next to the probe artifacts.
 
     Command contract:
@@ -24,13 +24,15 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ExternalRoot = 'C:\dev\helworks\builds\helengine-ps3'
+    [Alias('ExternalRoot')][string]$StateRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+. (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+$StateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
 $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 $timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
 
@@ -83,7 +85,7 @@ if ($null -eq $lock.ResolvedImage -or [string]::IsNullOrWhiteSpace([string]$lock
 }
 $imageId = [string]$lock.ResolvedImage.ImageId
 
-$probeRoot = Join-Path ([IO.Path]::GetFullPath($ExternalRoot)) "core-abi-$timestamp"
+$probeRoot = Join-Path $StateRoot "toolchain\core-abi-$timestamp"
 if (Test-Path -LiteralPath $probeRoot) { throw "Probe directory already exists: $probeRoot" }
 New-Item -ItemType Directory -Path $probeRoot | Out-Null
 
