@@ -1,0 +1,46 @@
+[{"Path":"C:\\dev\\helworks\\helengine\\engine\\helengine.shader\\shaders\\compilation\\ShaderCompileService.cs","Hash":"1664C0542E0AF80E189B1A3EC052EAB9B50CC0B7023C39DE34A65FCF6D00E30B"},{"Path":"C:\\dev\\helworks\\helengine\\engine\\helengine.shader\\shaders\\compilation\\IShaderBackendCachePolicy.cs","Hash":"3657A7473D92B384AEC69430A095992B9A0964540FA0966A76DF5CB9458DFC01"}]
+warning: in the working copy of 'engine/helengine.shader/shaders/compilation/ShaderCompileService.cs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/engine/helengine.shader/shaders/compilation/ShaderCompileService.cs b/engine/helengine.shader/shaders/compilation/ShaderCompileService.cs
+index 0c47d153..c807be09 100644
+--- a/engine/helengine.shader/shaders/compilation/ShaderCompileService.cs
++++ b/engine/helengine.shader/shaders/compilation/ShaderCompileService.cs
+@@ -65,24 +65,28 @@ namespace helengine {
+ 
+         /// <summary>
+         /// Compiles a shader entry point using a registered backend.
+         /// </summary>
+         /// <param name="request">Shader compilation request.</param>
+         /// <returns>Compilation result.</returns>
+         public ShaderCompileResult Compile(ShaderCompileRequest request) {
+             if (request == null) {
+                 throw new ArgumentNullException(nameof(request));
+             }
+ 
+             IShaderBackend backend = GetBackend(request.Target);
++            if (backend is IShaderBackendCachePolicy cachePolicy && !cachePolicy.UseSharedCache) {
++                return backend.Compile(request, includeResolver);
++            }
++
+             ShaderCompileCacheKey cacheKey = ShaderCompileRequestIdentity.CreateCacheKey(request, sourceHasher);
+             ShaderCompileResult cached;
+             if (cache.TryGet(cacheKey, out cached)) {
+                 return cached;
+             }
+ 
+             ShaderCompileResult result = backend.Compile(request, includeResolver);
+             cache.Store(cacheKey, result);
+             return result;
+         }
+ 
+         /// <summary>
+namespace helengine {
+    /// <summary>
+    /// Allows a host-only shader backend to opt out of the shared compile cache.
+    /// </summary>
+    public interface IShaderBackendCachePolicy {
+        /// <summary>
+        /// Gets whether the shared shader compile cache should be used for this backend.
+        /// </summary>
+        bool UseSharedCache { get; }
+    }
+}

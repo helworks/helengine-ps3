@@ -38,6 +38,12 @@ The binding mapper recognizes synthetic sampler dimension tokens for 1D, 2D, 3D,
 
 Integer/non-FP3232 inter-stage values, varying matrices and arrays, unverified active Cg routes, and untested sampler dimensions remain unsupported. A successful compile of an isolated program does not extend these limits.
 
+## Declared constant-buffer metadata
+
+Each active constant buffer carries its SPIRV-Cross declared compiled-structure size and binding. The size comes directly from the compiled SPIR-V struct query; it describes that compiled structure, which may differ from the full authored declaration after optimization, and is not an RSX register count. `UniformMembers` separately records physical SPIR-V member offsets, sizes, array and matrix strides, and major decoration. These records do not define runtime constant packing or prove that constants are uploaded; runtime packing and upload remain pending. Members removed by optimization are not recovered or synthesized.
+
+The shared compile service exposes `IShaderBackendCachePolicy.UseSharedCache` for backends that can safely use the shared cache. The PS3 backend is not registered here. Any future PS3 backend must opt out until cache identity includes all relevant immutable inputs, including resolved include contents and compiler options/toolchain identity; this opt-out seam does not itself provide a complete cache key or register a backend.
+
 ## Pipeline boundary
 
 ```text

@@ -309,7 +309,7 @@ public sealed class Ps3DockerShaderCompilerTests {
     /// <param name="source">Compiler-generated GLSL for the test.</param>
     /// <returns>A translation carrying the exact stage and no fabricated reflection records.</returns>
     static Ps3ShaderTranslation CreateTranslation(helengine.ShaderStage stage, string source) {
-        return new Ps3ShaderTranslation(stage, source, [], [], [], [], [], [], []);
+        return new Ps3ShaderTranslation(stage, source, [], [], [], [], [], [], [], []);
     }
 
     /// <summary>Creates a large unrolled fragment expression to keep a real Docker job active for cancellation.</summary>

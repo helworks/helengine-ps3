@@ -83,6 +83,11 @@ public sealed class Ps3ShaderReflectionTests {
     public void ReflectsPaddedAndNestedUniformMembers() {
         Ps3ShaderTranslation translation = new Ps3ShaderSourceCompiler().Translate(
             CreateRequest(ReflectionSource, ShaderStage.Vertex, "VS", optimize: true), new Ps3ShaderIncludeResolverStub());
+        Ps3ShaderUniformBuffer frame = Assert.Single(translation.UniformBuffers, buffer => buffer.BufferName == "Frame");
+        Assert.Equal(0u, frame.BufferBinding);
+        Assert.Equal(128u, frame.ByteSize);
+        Assert.Equal(16u, Assert.Single(translation.UniformBuffers, buffer => buffer.BufferName == "MaterialPrimary").ByteSize);
+        Assert.Equal(16u, Assert.Single(translation.UniformBuffers, buffer => buffer.BufferName == "MaterialSecondary").ByteSize);
         Ps3ShaderUniformMember direction = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Direction");
         Ps3ShaderUniformMember intensity = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Intensity");
         Ps3ShaderUniformMember transform = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Transform");
@@ -127,6 +132,37 @@ public sealed class Ps3ShaderReflectionTests {
         Assert.Contains(secondaryTint.GeneratedName, translation.GlslSource, StringComparison.Ordinal);
         Assert.Equal(4u, transform.Columns);
         Assert.Equal(4u, transform.VectorWidth);
+    }
+
+    /// <summary>Reflects the compiled SPIR-V structure size for a fully used padded buffer under both optimization modes.</summary>
+    /// <param name="optimize">Whether shaderc optimization is enabled.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReflectsDeclaredPaddedBufferSize(bool optimize) {
+        const string source = "cbuffer Padded : register(b3) { float3 Direction; float Intensity; float4 Colors[2]; }; float4 PS() : SV_Target { return float4(Direction * Intensity, 1) + Colors[0] + Colors[1]; }";
+
+        Ps3ShaderTranslation translation = new Ps3ShaderSourceCompiler().Translate(
+            CreateRequest(source, ShaderStage.Pixel, "PS", optimize), new Ps3ShaderIncludeResolverStub());
+
+        Ps3ShaderUniformBuffer buffer = Assert.Single(translation.UniformBuffers);
+        Assert.Equal("Padded", buffer.BufferName);
+        Assert.Equal(3u, buffer.BufferBinding);
+        Assert.Equal(48u, buffer.ByteSize);
+        Assert.Equal(new uint[] { 0, 12, 16 }, translation.UniformMembers.Select(member => member.ByteOffset).Order().ToArray());
+        Ps3ShaderUniformMember colors = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Colors");
+        Assert.Equal(16u, colors.ArrayStride);
+    }
+
+    /// <summary>Returns no reflected buffer metadata when the active shader uses only constants.</summary>
+    [Fact]
+    public void ReflectsNoUniformBuffersForConstantOnlyShader() {
+        const string source = "float4 PS() : SV_Target { return float4(1,2,3,4); }";
+
+        Ps3ShaderTranslation translation = new Ps3ShaderSourceCompiler().Translate(
+            CreateRequest(source, ShaderStage.Pixel, "PS", optimize: true), new Ps3ShaderIncludeResolverStub());
+
+        Assert.Empty(translation.UniformBuffers);
     }
 
     /// <summary>Accepts one-dimensional uniform arrays when compiler offset, size and stride fit the DTO exactly.</summary>
@@ -260,7 +296,7 @@ public sealed class Ps3ShaderReflectionTests {
             buildsRoot,
             Path.Combine(buildsRoot, "..", "helengine-ps3-escape", "task-2-probe"),
             buildsRoot + "-escape" + Path.DirectorySeparatorChar + "task-2-probe",
-            Path.GetTempPath()
+            Path.Combine(repositoryRoot, "path-probe")
         ];
 
         foreach (string rejectedRoot in rejectedRoots) {

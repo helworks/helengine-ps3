@@ -1,0 +1,643 @@
+warning: in the working copy of 'builder.tests/Ps3DockerShaderCompilerTests.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'builder.tests/Ps3ShaderBindingMapTests.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'builder.tests/Ps3ShaderReflectionTests.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'builder/shaders/Ps3ShaderReflection.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'builder/shaders/Ps3ShaderSourceCompiler.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'builder/shaders/Ps3ShaderTranslation.cs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/Ps3ShaderCompiler.md', LF will be replaced by CRLF the next time Git touches it
+diff --git a/builder.tests/Ps3DockerShaderCompilerTests.cs b/builder.tests/Ps3DockerShaderCompilerTests.cs
+index 42f5536..71d262d 100644
+--- a/builder.tests/Ps3DockerShaderCompilerTests.cs
++++ b/builder.tests/Ps3DockerShaderCompilerTests.cs
+@@ -302,21 +302,21 @@ public sealed class Ps3DockerShaderCompilerTests {
+     /// <returns>A pixel translation with no fabricated reflection resources.</returns>
+     static Ps3ShaderTranslation CreateTranslation(string source) {
+         return CreateTranslation(helengine.ShaderStage.Pixel, source);
+     }
+ 
+     /// <summary>Builds a Task2 translation for an explicit vertex or pixel source string.</summary>
+     /// <param name="stage">Translation stage.</param>
+     /// <param name="source">Compiler-generated GLSL for the test.</param>
+     /// <returns>A translation carrying the exact stage and no fabricated reflection records.</returns>
+     static Ps3ShaderTranslation CreateTranslation(helengine.ShaderStage stage, string source) {
+-        return new Ps3ShaderTranslation(stage, source, [], [], [], [], [], [], []);
++        return new Ps3ShaderTranslation(stage, source, [], [], [], [], [], [], [], []);
+     }
+ 
+     /// <summary>Creates a large unrolled fragment expression to keep a real Docker job active for cancellation.</summary>
+     /// <returns>Valid generated GLSL with substantial compile work.</returns>
+     static string CreateExpensiveFragmentSource() {
+         System.Text.StringBuilder source = new("#version 120\nvoid main() {\nfloat x = 0.25;\n");
+         for (int index = 0; index < 12000; index++) source.Append("x = x * 1.00001 + 0.00001;\n");
+         source.Append("gl_FragColor = vec4(x);\n}\n");
+         return source.ToString();
+     }
+diff --git a/builder.tests/Ps3ShaderBindingMapTests.cs b/builder.tests/Ps3ShaderBindingMapTests.cs
+index b98e969..8141367 100644
+--- a/builder.tests/Ps3ShaderBindingMapTests.cs
++++ b/builder.tests/Ps3ShaderBindingMapTests.cs
+@@ -16,31 +16,33 @@ public sealed class Ps3ShaderBindingMapTests {
+             + "#var float2 pixelUv : $vin.TEX0 : TEX0 : -1 : 1\n";
+         Ps3ShaderTranslation vertexSource = new(
+             ShaderStage.Vertex,
+             "vertex source",
+             Array.Empty<string>(),
+             new[] { "Position" },
+             Array.Empty<Ps3ShaderInterfaceVariable>(),
+             new[] { new Ps3ShaderInterfaceVariable("TEXCOORD0", 0, "FP3232", 2, 1, 1, "smooth", "vertexUv") },
+             Array.Empty<Ps3ShaderUniformMember>(),
+             Array.Empty<Ps3ShaderSamplerBinding>(),
+-            Array.Empty<Ps3ShaderSourceDependency>());
++            Array.Empty<Ps3ShaderSourceDependency>(),
++            Array.Empty<Ps3ShaderUniformBuffer>());
+         Ps3ShaderTranslation pixelSource = new(
+             ShaderStage.Pixel,
+             "pixel source",
+             Array.Empty<string>(),
+             Array.Empty<string>(),
+             new[] { new Ps3ShaderInterfaceVariable("TEXCOORD0", 0, "FP3232", 2, 1, 1, "smooth", "pixelUv") },
+             Array.Empty<Ps3ShaderInterfaceVariable>(),
+             Array.Empty<Ps3ShaderUniformMember>(),
+             Array.Empty<Ps3ShaderSamplerBinding>(),
+-            Array.Empty<Ps3ShaderSourceDependency>());
++            Array.Empty<Ps3ShaderSourceDependency>(),
++            Array.Empty<Ps3ShaderUniformBuffer>());
+         Ps3RsxProgram vertexProgram = new(ShaderStage.Vertex, Array.Empty<byte>(), vertexDump, "test-sdk", Array.Empty<Ps3RsxParameter>());
+         Ps3RsxProgram pixelProgram = new(ShaderStage.Pixel, Array.Empty<byte>(), pixelDump, "test-sdk", Array.Empty<Ps3RsxParameter>());
+         Ps3ShaderBindingMapBuilder builder = new();
+ 
+         Ps3ShaderBindingMap map = builder.Build(vertexSource, vertexProgram, pixelSource, pixelProgram);
+ 
+         Ps3ShaderStageLink link = Assert.Single(map.StageLinks);
+         Assert.Equal("TEXCOORD0", link.AuthoredSemantic);
+         Assert.Equal("TEX0", link.VertexChannel);
+         Assert.Equal("TEX0", link.PixelChannel);
+@@ -213,21 +215,22 @@ public sealed class Ps3ShaderBindingMapTests {
+             + "#var float4 fragment.position : $vin.WPOS : WPOS : -1 : 1\n";
+         Ps3ShaderTranslation pixelSource = new(
+             ShaderStage.Pixel,
+             "pixel source",
+             new[] { "FragCoord" },
+             Array.Empty<string>(),
+             Array.Empty<Ps3ShaderInterfaceVariable>(),
+             Array.Empty<Ps3ShaderInterfaceVariable>(),
+             Array.Empty<Ps3ShaderUniformMember>(),
+             Array.Empty<Ps3ShaderSamplerBinding>(),
+-            Array.Empty<Ps3ShaderSourceDependency>());
++            Array.Empty<Ps3ShaderSourceDependency>(),
++            Array.Empty<Ps3ShaderUniformBuffer>());
+ 
+         Ps3ShaderBindingMap map = Map(
+             Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+             Program(ShaderStage.Vertex, VertexPositionDump()),
+             pixelSource,
+             Program(ShaderStage.Pixel, pixelDump));
+ 
+         Assert.Empty(map.StageLinks);
+     }
+ 
+@@ -272,60 +275,63 @@ public sealed class Ps3ShaderBindingMapTests {
+     [Fact]
+     public void MapsSameNamedUniformMembersFromDifferentBuffersSeparately() {
+         Ps3ShaderUniformMember primary = Uniform("Primary", 1, "Tint", "primaryTint");
+         Ps3ShaderUniformMember secondary = Uniform("Secondary", 2, "Tint", "secondaryTint");
+         Ps3RsxParameter primaryParameter = VertexConstant("primaryTint", Ps3RsxDataType.Float4, 1, 2);
+         Ps3RsxParameter secondaryParameter = VertexConstant("secondaryTint", Ps3RsxDataType.Float4, 1, 3);
+         string vertexDump = VertexPositionLine + "#var float4 primaryTint :  : c[2] : -1 : 1\n"
+             + "#var float4 secondaryTint :  : c[3] : -1 : 1\n";
+ 
+         Ps3ShaderBindingMap map = Map(
+-            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { primary, secondary }),
++            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { primary, secondary },
++                uniformBuffers: [new("Primary", 1, 16), new("Secondary", 2, 16)]),
+             Program(ShaderStage.Vertex, vertexDump, primaryParameter, secondaryParameter),
+             Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+             Program(ShaderStage.Pixel, PixelOutputDump()));
+ 
+         Assert.Equal(2, map.Uniforms.Count);
+         Assert.Equal(new[] { "Primary", "Secondary" }, map.Uniforms.Select(binding => binding.AuthoredBufferName));
+         Assert.All(map.Uniforms, binding => Assert.False(string.IsNullOrWhiteSpace(binding.AuthoredMemberPath)));
+         Assert.Equal(new[] { primaryParameter, secondaryParameter }, map.Uniforms.Select(binding => binding.RsxParameter));
+     }
+ 
+     /// <summary>Uses physical SPIR-V matrix columns and vector width to reconcile the SDK constant-vector count.</summary>
+     [Fact]
+     public void MapsPhysicalFloat3x4MatrixToThreeVertexConstantRegisters() {
+         Ps3ShaderUniformMember matrix = new("Frame", 0, "RowMajorTransform", 80, 48, 0, 16, false,
+             "physicalMatrix", "FP3232", 4, 3, 1);
+         Ps3RsxParameter parameter = VertexConstant("physicalMatrix", Ps3RsxDataType.Float3x4, 3, 4);
+         string vertexDump = VertexPositionLine + "#var float3x4 physicalMatrix :  : c[4], 3 : -1 : 1\n";
+ 
+         Ps3ShaderBindingMap map = Map(
+-            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { matrix }),
++            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { matrix },
++                uniformBuffers: [new("Frame", 0, 128)]),
+             Program(ShaderStage.Vertex, vertexDump, parameter),
+             Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+             Program(ShaderStage.Pixel, PixelOutputDump()));
+ 
+         Ps3ShaderUniformBinding binding = Assert.Single(map.Uniforms);
+         Assert.Equal("FP3232", binding.SourceMember.ScalarType);
+         Assert.Equal(3u, binding.SourceMember.Columns);
+         Assert.Equal(4u, binding.SourceMember.VectorWidth);
+         Assert.Equal(new uint?[] { 4, 5, 6 }, binding.RsxParameter.Elements.Select(element => element.VertexRegister));
+     }
+ 
+     /// <summary>Allows a translation member to disappear when Cg marks the corresponding declaration inactive.</summary>
+     [Fact]
+     public void OmitsOptimizedOutUniformMemberWithoutInventingAParameter() {
+         Ps3ShaderUniformMember tint = Uniform("Material", 1, "Tint", "inactiveTint");
+         string vertexDump = VertexPositionLine + "#var float4 inactiveTint :  : c[0] : -1 : 0\n";
+ 
+         Ps3ShaderBindingMap map = Map(
+-            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { tint }),
++            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { tint },
++                uniformBuffers: [new("Material", 1, 16)]),
+             Program(ShaderStage.Vertex, vertexDump),
+             Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+             Program(ShaderStage.Pixel, PixelOutputDump()));
+ 
+         Assert.Empty(map.Uniforms);
+     }
+ 
+     /// <summary>Maps two combined samplers that share a texture but use distinct authored sampler identities and RSX units.</summary>
+     [Fact]
+     public void MapsTextureSamplerPairsToDistinctSdkTextureUnits() {
+@@ -368,21 +374,22 @@ public sealed class Ps3ShaderBindingMapTests {
+     public void RequiresReflectedPositionBuiltin() {
+         Ps3ShaderTranslation vertexSource = new(
+             ShaderStage.Vertex,
+             "vertex source",
+             Array.Empty<string>(),
+             Array.Empty<string>(),
+             Array.Empty<Ps3ShaderInterfaceVariable>(),
+             Array.Empty<Ps3ShaderInterfaceVariable>(),
+             Array.Empty<Ps3ShaderUniformMember>(),
+             Array.Empty<Ps3ShaderSamplerBinding>(),
+-            Array.Empty<Ps3ShaderSourceDependency>());
++            Array.Empty<Ps3ShaderSourceDependency>(),
++            Array.Empty<Ps3ShaderUniformBuffer>());
+ 
+         Assert.Throws<InvalidOperationException>(() => Map(
+             vertexSource,
+             Program(ShaderStage.Vertex, VertexPositionDump()),
+             Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+             Program(ShaderStage.Pixel, PixelOutputDump())));
+     }
+ 
+     /// <summary>Creates a standard authored interface record for a 32-bit floating-point vector.</summary>
+     /// <param name="semantic">HLSL semantic.</param>
+@@ -392,25 +399,28 @@ public sealed class Ps3ShaderBindingMapTests {
+     static Ps3ShaderInterfaceVariable Interface(string semantic, string generatedName, uint width) {
+         return new Ps3ShaderInterfaceVariable(semantic, 0, "FP3232", width, 1, 1, "smooth", generatedName);
+     }
+ 
+     /// <summary>Creates a translation with explicit interface, uniform and sampler metadata.</summary>
+     /// <param name="stage">Stage represented by the translation.</param>
+     /// <param name="inputs">Reflected active stage inputs.</param>
+     /// <param name="outputs">Reflected active stage outputs.</param>
+     /// <param name="uniforms">Optional reflected active uniform members.</param>
+     /// <param name="samplers">Optional reflected active combined samplers.</param>
++    /// <param name="uniformBuffers">Explicit compiled-size metadata for synthetic buffers used by this fixture.</param>
+     /// <returns>An immutable source translation fixture.</returns>
+     static Ps3ShaderTranslation Translation(ShaderStage stage, Ps3ShaderInterfaceVariable[] inputs, Ps3ShaderInterfaceVariable[] outputs,
+-        Ps3ShaderUniformMember[] uniforms = null, Ps3ShaderSamplerBinding[] samplers = null) {
++        Ps3ShaderUniformMember[] uniforms = null, Ps3ShaderSamplerBinding[] samplers = null,
++        Ps3ShaderUniformBuffer[] uniformBuffers = null) {
+         return new Ps3ShaderTranslation(stage, "shader source", Array.Empty<string>(), stage == ShaderStage.Vertex ? new[] { "Position" } : Array.Empty<string>(),
+-            inputs, outputs, uniforms ?? Array.Empty<Ps3ShaderUniformMember>(), samplers ?? Array.Empty<Ps3ShaderSamplerBinding>(), Array.Empty<Ps3ShaderSourceDependency>());
++            inputs, outputs, uniforms ?? Array.Empty<Ps3ShaderUniformMember>(), samplers ?? Array.Empty<Ps3ShaderSamplerBinding>(),
++            Array.Empty<Ps3ShaderSourceDependency>(), uniformBuffers ?? Array.Empty<Ps3ShaderUniformBuffer>());
+     }
+ 
+     /// <summary>Creates a parsed-program fixture around explicit Cg dump and RSX parameter data.</summary>
+     /// <param name="stage">Expected RSX program stage.</param>
+     /// <param name="dump">Cg profile and variable declarations.</param>
+     /// <param name="parameters">Explicit SDK parameter records.</param>
+     /// <returns>The requested stage program fixture.</returns>
+     static Ps3RsxProgram Program(ShaderStage stage, string dump, params Ps3RsxParameter[] parameters) {
+         return new Ps3RsxProgram(stage, Array.Empty<byte>(), dump, "test-sdk", parameters);
+     }
+diff --git a/builder.tests/Ps3ShaderReflectionTests.cs b/builder.tests/Ps3ShaderReflectionTests.cs
+index 6160e00..7fc5cc2 100644
+--- a/builder.tests/Ps3ShaderReflectionTests.cs
++++ b/builder.tests/Ps3ShaderReflectionTests.cs
+@@ -76,20 +76,25 @@ public sealed class Ps3ShaderReflectionTests {
+         Assert.All(optimized.Inputs.Concat(optimized.Outputs), variable => Assert.Contains(variable.GeneratedName, optimized.GlslSource, StringComparison.Ordinal));
+         Assert.Contains("Position", optimized.OutputBuiltIns);
+         Assert.DoesNotContain(optimized.Outputs, variable => variable.Semantic == "SV_Position");
+     }
+ 
+     /// <summary>Reflects exact cbuffer bindings, paths, member sizes, offsets and matrix layout from compiler queries.</summary>
+     [Fact]
+     public void ReflectsPaddedAndNestedUniformMembers() {
+         Ps3ShaderTranslation translation = new Ps3ShaderSourceCompiler().Translate(
+             CreateRequest(ReflectionSource, ShaderStage.Vertex, "VS", optimize: true), new Ps3ShaderIncludeResolverStub());
++        Ps3ShaderUniformBuffer frame = Assert.Single(translation.UniformBuffers, buffer => buffer.BufferName == "Frame");
++        Assert.Equal(0u, frame.BufferBinding);
++        Assert.Equal(128u, frame.ByteSize);
++        Assert.Equal(16u, Assert.Single(translation.UniformBuffers, buffer => buffer.BufferName == "MaterialPrimary").ByteSize);
++        Assert.Equal(16u, Assert.Single(translation.UniformBuffers, buffer => buffer.BufferName == "MaterialSecondary").ByteSize);
+         Ps3ShaderUniformMember direction = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Direction");
+         Ps3ShaderUniformMember intensity = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Intensity");
+         Ps3ShaderUniformMember transform = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Transform");
+         Ps3ShaderUniformMember rowMajorTransform = Assert.Single(translation.UniformMembers, member => member.MemberPath == "RowMajorTransform");
+         Assert.True(translation.UniformMembers.Any(member => member.MemberPath == "Primary.Tint"),
+             $"Reflected member paths: {string.Join(", ", translation.UniformMembers.Select(member => $"{member.BufferName}:{member.MemberPath}"))}");
+         Ps3ShaderUniformMember primaryTint = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Primary.Tint");
+         Assert.True(translation.UniformMembers.Any(member => member.MemberPath == "Secondary.Tint"),
+             $"Reflected member paths: {string.Join(", ", translation.UniformMembers.Select(member => $"{member.BufferName}:{member.MemberPath}"))}");
+         Ps3ShaderUniformMember secondaryTint = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Secondary.Tint");
+@@ -122,20 +127,51 @@ public sealed class Ps3ShaderReflectionTests {
+         Assert.StartsWith("hel_ps3_uniform_buffer_binding_1.", primaryTint.GeneratedName, StringComparison.Ordinal);
+         Assert.StartsWith("hel_ps3_uniform_buffer_binding_2.", secondaryTint.GeneratedName, StringComparison.Ordinal);
+         Assert.True(primaryTint.GeneratedName.Count(character => character == '.') >= 2, primaryTint.GeneratedName);
+         Assert.True(secondaryTint.GeneratedName.Count(character => character == '.') >= 2, secondaryTint.GeneratedName);
+         Assert.Contains(primaryTint.GeneratedName, translation.GlslSource, StringComparison.Ordinal);
+         Assert.Contains(secondaryTint.GeneratedName, translation.GlslSource, StringComparison.Ordinal);
+         Assert.Equal(4u, transform.Columns);
+         Assert.Equal(4u, transform.VectorWidth);
+     }
+ 
++    /// <summary>Reflects the compiled SPIR-V structure size for a fully used padded buffer under both optimization modes.</summary>
++    /// <param name="optimize">Whether shaderc optimization is enabled.</param>
++    [Theory]
++    [InlineData(false)]
++    [InlineData(true)]
++    public void ReflectsDeclaredPaddedBufferSize(bool optimize) {
++        const string source = "cbuffer Padded : register(b3) { float3 Direction; float Intensity; float4 Colors[2]; }; float4 PS() : SV_Target { return float4(Direction * Intensity, 1) + Colors[0] + Colors[1]; }";
++
++        Ps3ShaderTranslation translation = new Ps3ShaderSourceCompiler().Translate(
++            CreateRequest(source, ShaderStage.Pixel, "PS", optimize), new Ps3ShaderIncludeResolverStub());
++
++        Ps3ShaderUniformBuffer buffer = Assert.Single(translation.UniformBuffers);
++        Assert.Equal("Padded", buffer.BufferName);
++        Assert.Equal(3u, buffer.BufferBinding);
++        Assert.Equal(48u, buffer.ByteSize);
++        Assert.Equal(new uint[] { 0, 12, 16 }, translation.UniformMembers.Select(member => member.ByteOffset).Order().ToArray());
++        Ps3ShaderUniformMember colors = Assert.Single(translation.UniformMembers, member => member.MemberPath == "Colors");
++        Assert.Equal(16u, colors.ArrayStride);
++    }
++
++    /// <summary>Returns no reflected buffer metadata when the active shader uses only constants.</summary>
++    [Fact]
++    public void ReflectsNoUniformBuffersForConstantOnlyShader() {
++        const string source = "float4 PS() : SV_Target { return float4(1,2,3,4); }";
++
++        Ps3ShaderTranslation translation = new Ps3ShaderSourceCompiler().Translate(
++            CreateRequest(source, ShaderStage.Pixel, "PS", optimize: true), new Ps3ShaderIncludeResolverStub());
++
++        Assert.Empty(translation.UniformBuffers);
++    }
++
+     /// <summary>Accepts one-dimensional uniform arrays when compiler offset, size and stride fit the DTO exactly.</summary>
+     [Fact]
+     public void ReflectsUniformMembersWithOneArrayStride() {
+         const string source = "cbuffer ArrayBuffer : register(b0) { float4 Values[2]; }; float4 PS() : SV_Target { return Values[1]; }";
+ 
+         Ps3ShaderTranslation translation = new Ps3ShaderSourceCompiler().Translate(
+             CreateRequest(source, ShaderStage.Pixel, "PS", optimize: true), new Ps3ShaderIncludeResolverStub());
+ 
+         Ps3ShaderUniformMember values = Assert.Single(translation.UniformMembers);
+         Assert.Equal("Values", values.MemberPath);
+@@ -253,21 +289,21 @@ public sealed class Ps3ShaderReflectionTests {
+     [Fact]
+     public void RejectsReflectionProbeOutputRootsOutsideBuildDirectory() {
+         string repositoryRoot = GetRepositoryRoot();
+         string buildsRoot = GetReflectionProbeBuildsRoot(repositoryRoot);
+         string[] rejectedRoots = [
+             "",
+             "relative/task-2-probe",
+             buildsRoot,
+             Path.Combine(buildsRoot, "..", "helengine-ps3-escape", "task-2-probe"),
+             buildsRoot + "-escape" + Path.DirectorySeparatorChar + "task-2-probe",
+-            Path.GetTempPath()
++            Path.Combine(repositoryRoot, "path-probe")
+         ];
+ 
+         foreach (string rejectedRoot in rejectedRoots) {
+             Assert.False(IsValidReflectionProbeOutputRoot(rejectedRoot, repositoryRoot), rejectedRoot);
+         }
+     }
+ 
+     /// <summary>Rejects resources without a tested RSX mapping with a diagnostic naming the unsupported category.</summary>
+     /// <param name="source">HLSL declaring one unsupported resource shape.</param>
+     /// <param name="entryPoint">Entry point that actively uses the resource.</param>
+diff --git a/builder/shaders/Ps3ShaderReflection.cs b/builder/shaders/Ps3ShaderReflection.cs
+index dcf421e..9053e70 100644
+--- a/builder/shaders/Ps3ShaderReflection.cs
++++ b/builder/shaders/Ps3ShaderReflection.cs
+@@ -37,20 +37,23 @@ internal sealed unsafe class Ps3ShaderReflection {
+ 
+     /// <summary>Gets official SPIR-V built-in names consumed by this stage.</summary>
+     public IReadOnlyList<string> InputBuiltIns { get; private set; } = Array.Empty<string>();
+ 
+     /// <summary>Gets official SPIR-V built-in names produced by this stage.</summary>
+     public IReadOnlyList<string> OutputBuiltIns { get; private set; } = Array.Empty<string>();
+ 
+     /// <summary>Gets active constant-buffer leaf members and their compiler-declared layout.</summary>
+     public IReadOnlyList<Ps3ShaderUniformMember> UniformMembers { get; private set; } = Array.Empty<Ps3ShaderUniformMember>();
+ 
++    /// <summary>Gets active constant buffers and their compiler-declared compiled structure sizes.</summary>
++    public IReadOnlyList<Ps3ShaderUniformBuffer> UniformBuffers { get; private set; } = Array.Empty<Ps3ShaderUniformBuffer>();
++
+     /// <summary>Gets active texture and sampler pairs after compiler-driven combined-image construction.</summary>
+     public IReadOnlyList<Ps3ShaderSamplerBinding> Samplers { get; private set; } = Array.Empty<Ps3ShaderSamplerBinding>();
+ 
+     /// <summary>Reflects active user inputs and outputs and assigns their stable GLSL names.</summary>
+     public void ReflectInterfaces() {
+         Resources* resources = null;
+         Check(Api.CompilerCreateShaderResources(Compiler, &resources));
+         Inputs = ReadInterface(resources, ResourceType.StageInput, "input");
+         Outputs = ReadInterface(resources, ResourceType.StageOutput, "output");
+         Api.CompilerUpdateActiveBuiltins(Compiler);
+@@ -214,20 +217,21 @@ internal sealed unsafe class Ps3ShaderReflection {
+ 
+     /// <summary>Reads active uniform buffers, gives each buffer a unique root name and walks nested members.</summary>
+     /// <param name="resources">SPIRV-Cross resources associated with the active entry point.</param>
+     /// <returns>All active scalar, vector and matrix leaf members.</returns>
+     IReadOnlyList<Ps3ShaderUniformMember> ReadUniformMembers(Resources* resources) {
+         ReflectedResource* resourceList = null;
+         nuint resourceCount = 0;
+         Check(Api.ResourcesGetResourceListForType(resources, ResourceType.UniformBuffer, ref resourceList, ref resourceCount));
+ 
+         List<Ps3ShaderUniformMember> members = [];
++        List<Ps3ShaderUniformBuffer> buffers = [];
+         HashSet<uint> bindings = [];
+         Dictionary<uint, Dictionary<uint, string>> memberNamesByType = [];
+         Dictionary<uint, string[]> authoredMemberNamesByType = [];
+         for (nuint resourceIndex = 0; resourceIndex < resourceCount; resourceIndex++) {
+             ReflectedResource resource = resourceList[resourceIndex];
+             uint descriptorSet = HasDecoration(resource.Id, Silk.NET.SPIRV.Decoration.DescriptorSet)
+                 ? Api.CompilerGetDecoration(Compiler, resource.Id, Silk.NET.SPIRV.Decoration.DescriptorSet)
+                 : 0;
+             if (descriptorSet != 0) {
+                 throw new NotSupportedException($"PS3 uniform buffer '{Api.CompilerGetNameS(Compiler, resource.Id)}' uses unsupported resource space {descriptorSet}.");
+@@ -240,30 +244,36 @@ internal sealed unsafe class Ps3ShaderReflection {
+                 throw new NotSupportedException($"Active PS3 uniform buffers share binding {binding}, which has no tested RSX mapping.");
+             }
+ 
+             string resourceName = Api.CompilerGetNameS(Compiler, resource.Id);
+             string bufferName = string.IsNullOrWhiteSpace(resourceName)
+                 ? Api.CompilerGetNameS(Compiler, resource.BaseTypeId)
+                 : resourceName;
+             if (string.IsNullOrWhiteSpace(bufferName)) {
+                 throw new InvalidOperationException($"Active PS3 uniform buffer at binding {binding} has neither a compiler-preserved resource name nor a named reflected base type.");
+             }
++            CrossType* bufferType = Api.CompilerGetTypeHandle(Compiler, resource.BaseTypeId);
++            nuint declaredSize = 0;
++            Check(Api.CompilerGetDeclaredStructSize(Compiler, bufferType, ref declaredSize));
++            uint byteSize = checked((uint)declaredSize);
++            buffers.Add(new Ps3ShaderUniformBuffer(bufferName, binding, byteSize));
+             string generatedBufferName = $"hel_ps3_uniform_buffer_binding_{binding}";
+             Api.CompilerSetName(Compiler, resource.Id, generatedBufferName);
+             ReflectUniformStruct(resource.BaseTypeId, bufferName, binding, generatedBufferName, string.Empty, 0, 1, 0,
+                 memberNamesByType, authoredMemberNamesByType, members);
+         }
+         foreach (KeyValuePair<uint, Dictionary<uint, string>> typeNames in memberNamesByType) {
+             foreach (KeyValuePair<uint, string> memberName in typeNames.Value) {
+                 Api.CompilerSetMemberName(Compiler, typeNames.Key, memberName.Key, memberName.Value);
+             }
+         }
++        UniformBuffers = buffers.AsReadOnly();
+         return members.AsReadOnly();
+     }
+ 
+     /// <summary>Rejects active resource categories and descriptor spaces without a tested PS3 mapping.</summary>
+     /// <param name="resources">SPIRV-Cross resources associated with the active entry point.</param>
+     void ValidateUnsupportedResources(Resources* resources) {
+         ReflectedResource* storageImages = null;
+         nuint storageImageCount = 0;
+         Check(Api.ResourcesGetResourceListForType(resources, ResourceType.StorageImage, ref storageImages, ref storageImageCount));
+         if (storageImageCount > 0) {
+diff --git a/builder/shaders/Ps3ShaderSourceCompiler.cs b/builder/shaders/Ps3ShaderSourceCompiler.cs
+index ed916a0..756af6f 100644
+--- a/builder/shaders/Ps3ShaderSourceCompiler.cs
++++ b/builder/shaders/Ps3ShaderSourceCompiler.cs
+@@ -142,21 +142,21 @@ public sealed class Ps3ShaderSourceCompiler {
+                 request.Stage == ShaderStage.Vertex ? Silk.NET.SPIRV.ExecutionModel.Vertex : Silk.NET.SPIRV.ExecutionModel.Fragment));
+             Ps3ShaderReflection reflection = new(api, context, compiler);
+             reflection.ReflectInterfaces();
+             Check(api, context, api.CompilerBuildCombinedImageSamplers(compiler));
+             reflection.ReflectSamplers();
+             byte* source = null;
+             Check(api, context, api.CompilerCompile(compiler, &source));
+             string glslSource = Marshal.PtrToStringUTF8((IntPtr)source) ?? throw new InvalidOperationException("SPIRV-Cross returned no GLSL source.");
+             return new Ps3ShaderTranslation(request.Stage, glslSource, reflection.InputBuiltIns, reflection.OutputBuiltIns,
+                 reflection.Inputs, reflection.Outputs,
+-                reflection.UniformMembers, reflection.Samplers, dependencies);
++                reflection.UniformMembers, reflection.Samplers, dependencies, reflection.UniformBuffers);
+         } finally {
+             if (context != null) api.ContextDestroy(context);
+         }
+     }
+ 
+     /// <summary>Propagates compiler diagnostics instead of continuing with incomplete intermediate output.</summary>
+     /// <param name="api">Cross compiler API.</param>
+     /// <param name="context">Compilation context when available.</param>
+     /// <param name="result">Native operation result.</param>
+     static unsafe void Check(Cross api, Context* context, Result result) {
+diff --git a/builder/shaders/Ps3ShaderTranslation.cs b/builder/shaders/Ps3ShaderTranslation.cs
+index 4ef8a91..171bac1 100644
+--- a/builder/shaders/Ps3ShaderTranslation.cs
++++ b/builder/shaders/Ps3ShaderTranslation.cs
+@@ -5,40 +5,46 @@ namespace helengine.ps3.builder;
+ /// <summary>Contains PS3 GLSL output together with immutable reflection and active include dependencies.</summary>
+ public sealed class Ps3ShaderTranslation {
+     /// <summary>Initializes a translation and copies all supplied collections into read-only snapshots.</summary>
+     /// <param name="stage">Shader stage used for this translation.</param>
+     /// <param name="glslSource">Compiler-generated GLSL source.</param>
+     /// <param name="inputs">Active authored stage inputs.</param>
+     /// <param name="outputs">Active authored stage outputs.</param>
+     /// <param name="uniformMembers">Active constant-buffer members.</param>
+     /// <param name="samplers">Active combined texture and sampler bindings.</param>
+     /// <param name="dependencies">Active include dependencies resolved for this translation.</param>
++    /// <param name="uniformBuffers">Active constant buffers and their compiled declared structure sizes.</param>
+     public Ps3ShaderTranslation(
+         ShaderStage stage,
+         string glslSource,
+         IEnumerable<string> inputBuiltIns,
+         IEnumerable<string> outputBuiltIns,
+         IEnumerable<Ps3ShaderInterfaceVariable> inputs,
+         IEnumerable<Ps3ShaderInterfaceVariable> outputs,
+         IEnumerable<Ps3ShaderUniformMember> uniformMembers,
+         IEnumerable<Ps3ShaderSamplerBinding> samplers,
+-        IEnumerable<Ps3ShaderSourceDependency> dependencies) {
++        IEnumerable<Ps3ShaderSourceDependency> dependencies,
++        IEnumerable<Ps3ShaderUniformBuffer> uniformBuffers) {
+         if (string.IsNullOrWhiteSpace(glslSource)) throw new ArgumentException("Generated GLSL source must be provided.", nameof(glslSource));
+         Stage = stage;
+         GlslSource = glslSource;
+         InputBuiltIns = Copy(inputBuiltIns, nameof(inputBuiltIns));
+         OutputBuiltIns = Copy(outputBuiltIns, nameof(outputBuiltIns));
+         Inputs = Copy(inputs, nameof(inputs));
+         Outputs = Copy(outputs, nameof(outputs));
+         UniformMembers = Copy(uniformMembers, nameof(uniformMembers));
+         Samplers = Copy(samplers, nameof(samplers));
+         Dependencies = Copy(dependencies, nameof(dependencies));
++        UniformBuffers = Copy(uniformBuffers, nameof(uniformBuffers));
++        if (UniformBuffers.Any(buffer => buffer is null)) {
++            throw new ArgumentException("Uniform-buffer metadata cannot contain null items.", nameof(uniformBuffers));
++        }
+     }
+ 
+     /// <summary>Gets the compiled vertex or pixel stage.</summary>
+     public ShaderStage Stage { get; }
+ 
+     /// <summary>Gets the SPIRV-Cross-generated GLSL source without post-emission rewriting.</summary>
+     public string GlslSource { get; }
+ 
+     /// <summary>Gets the copied official SPIR-V built-in names consumed by this stage.</summary>
+     public IReadOnlyList<string> InputBuiltIns { get; }
+@@ -54,20 +60,23 @@ public sealed class Ps3ShaderTranslation {
+ 
+     /// <summary>Gets the copied active uniform-member records.</summary>
+     public IReadOnlyList<Ps3ShaderUniformMember> UniformMembers { get; }
+ 
+     /// <summary>Gets the copied active combined sampler records.</summary>
+     public IReadOnlyList<Ps3ShaderSamplerBinding> Samplers { get; }
+ 
+     /// <summary>Gets the copied active include dependency records.</summary>
+     public IReadOnlyList<Ps3ShaderSourceDependency> Dependencies { get; }
+ 
++    /// <summary>Gets the copied active constant-buffer records and compiler-declared structure sizes.</summary>
++    public IReadOnlyList<Ps3ShaderUniformBuffer> UniformBuffers { get; }
++
+     /// <summary>Creates a read-only snapshot of one required collection.</summary>
+     /// <typeparam name="T">Collection element type.</typeparam>
+     /// <param name="items">Collection to snapshot.</param>
+     /// <param name="parameterName">Argument name used in null diagnostics.</param>
+     /// <returns>A read-only copied collection.</returns>
+     static IReadOnlyList<T> Copy<T>(IEnumerable<T> items, string parameterName) {
+         ArgumentNullException.ThrowIfNull(items, parameterName);
+         return Array.AsReadOnly(items.ToArray());
+     }
+ }
+diff --git a/docs/Ps3ShaderCompiler.md b/docs/Ps3ShaderCompiler.md
+index 4b83ddd..788b6b7 100644
+--- a/docs/Ps3ShaderCompiler.md
++++ b/docs/Ps3ShaderCompiler.md
+@@ -31,20 +31,26 @@ The output directory contains the .NET artifacts under `dotnet`, invocation-spec
+ For each stage, the managed frontend uses shaderc's HLSL compiler and preprocessor, captures SPIR-V reflection, and uses the packaged SPIRV-Cross library to emit GLSL 1.20. Active `#include` directives are resolved through the shared include resolver and shaderc callbacks, including nested relative includes and conditional branches. Inactive includes are not resolved. Request defines are passed to shaderc before preprocessing; the `HEL_API_PS3` descriptor name is tested through a conditional include. The target descriptor exposes `ps3` / `HEL_API_PS3`, while callers supply request defines explicitly.
+ 
+ The accepted native pair path then converts generated vertex/pixel GLSL through `cgcomp` in the pinned Docker SDK. It reads the resulting SDK program binaries and compiler dumps, checks active vertex attributes, uniforms and samplers against SDK records, and reconciles authored inter-stage links by canonical Cg/RSX channel identity. The stages use their own SDK slots, which need not be numerically equal. Invalid or unsupported active routes fail explicitly rather than receiving invented defaults.
+ 
+ The task reports and tests establish vertex and pixel stages. Task 4's real Docker integration fixture uses a modern HLSL source with a `Texture2D`, two sampler identities, a constant-buffer member, `COLOR0` and `TEXCOORD0`; it compiles both stages and links those varyings through distinct Cg channels. Its active attributes, sampler units and fragment constant relocation are validated. This fixture is evidence for that concrete pair, not general HLSL interface support.
+ 
+ The binding mapper recognizes synthetic sampler dimension tokens for 1D, 2D, 3D, cube and rectangle resources, but only `Texture2D`/`Dim2D` has real HLSL-to-SDK integration coverage. The other dimension mappings are unit-level format mappings, not proof that modern HLSL declarations of those dimensions compile in the pinned SDK. Active user varyings are limited to one-column, non-array FP3232 scalar/vector values of width 1–4 with matching generated Cg declaration and cross-stage shape/interpolation. Vertex attributes must be non-array and map to a matching SDK attribute record. Active float scalar/vector constants and the documented Cg matrix forms (`float3x3`, `float3x4`, `float4x3`, `float4x4`) are decoded only when source reflection and SDK metadata agree. Optimized-out resources are not synthesized.
+ 
+ Integer/non-FP3232 inter-stage values, varying matrices and arrays, unverified active Cg routes, and untested sampler dimensions remain unsupported. A successful compile of an isolated program does not extend these limits.
+ 
++## Declared constant-buffer metadata
++
++Each active constant buffer carries its SPIRV-Cross declared compiled-structure size and binding. The size comes directly from the compiled SPIR-V struct query; it describes that compiled structure, which may differ from the full authored declaration after optimization, and is not an RSX register count. `UniformMembers` separately records physical SPIR-V member offsets, sizes, array and matrix strides, and major decoration. These records do not define runtime constant packing or prove that constants are uploaded; runtime packing and upload remain pending. Members removed by optimization are not recovered or synthesized.
++
++The shared compile service exposes `IShaderBackendCachePolicy.UseSharedCache` for backends that can safely use the shared cache. The PS3 backend is not registered here. Any future PS3 backend must opt out until cache identity includes all relevant immutable inputs, including resolved include contents and compiler options/toolchain identity; this opt-out seam does not itself provide a complete cache key or register a backend.
++
+ ## Pipeline boundary
+ 
+ ```text
+ HLSL request + request defines + include resolver
+                     |
+                     v
+         shaderc preprocessing and SPIR-V
+                     |
+                     v
+      packaged SPIRV-Cross -> GLSL 1.20
+warning: in the working copy of 'builder/shaders/Ps3ShaderUniformBuffer.cs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/builder/shaders/Ps3ShaderUniformBuffer.cs b/builder/shaders/Ps3ShaderUniformBuffer.cs
+new file mode 100644
+index 0000000..5f19e75
+--- /dev/null
++++ b/builder/shaders/Ps3ShaderUniformBuffer.cs
+@@ -0,0 +1,25 @@
++namespace helengine.ps3.builder;
++
++/// <summary>Describes the compiler-declared byte size and binding of one active constant-buffer structure.</summary>
++public sealed class Ps3ShaderUniformBuffer {
++    /// <summary>Initializes metadata captured directly from one active compiled SPIR-V structure.</summary>
++    /// <param name="bufferName">Compiler-preserved constant-buffer name.</param>
++    /// <param name="bufferBinding">SPIR-V binding decoration.</param>
++    /// <param name="byteSize">Declared compiled structure size in bytes.</param>
++    public Ps3ShaderUniformBuffer(string bufferName, uint bufferBinding, uint byteSize) {
++        if (string.IsNullOrWhiteSpace(bufferName)) throw new ArgumentException("A uniform buffer name must be provided.", nameof(bufferName));
++        if (byteSize == 0) throw new ArgumentOutOfRangeException(nameof(byteSize), "A declared uniform buffer size must be positive.");
++        BufferName = bufferName;
++        BufferBinding = bufferBinding;
++        ByteSize = byteSize;
++    }
++
++    /// <summary>Gets the compiler-preserved authored buffer name.</summary>
++    public string BufferName { get; }
++
++    /// <summary>Gets the SPIR-V binding decoration used by the active buffer.</summary>
++    public uint BufferBinding { get; }
++
++    /// <summary>Gets the byte size SPIRV-Cross reports for the compiled structure type.</summary>
++    public uint ByteSize { get; }
++}
+warning: in the working copy of 'builder.tests/Ps3ShaderUniformBufferTests.cs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/builder.tests/Ps3ShaderUniformBufferTests.cs b/builder.tests/Ps3ShaderUniformBufferTests.cs
+new file mode 100644
+index 0000000..3f7c768
+--- /dev/null
++++ b/builder.tests/Ps3ShaderUniformBufferTests.cs
+@@ -0,0 +1,58 @@
++using helengine;
++using helengine.ps3.builder;
++
++namespace helengine.ps3.builder.tests;
++
++/// <summary>Verifies declared constant-buffer metadata validation and immutable translation snapshots.</summary>
++public sealed class Ps3ShaderUniformBufferTests {
++    /// <summary>Rejects a buffer record without a compiler-preserved name.</summary>
++    [Theory]
++    [InlineData("")]
++    [InlineData("   ")]
++    public void RejectsBlankBufferName(string bufferName) {
++        Assert.Throws<ArgumentException>(() => new Ps3ShaderUniformBuffer(bufferName, 0, 16));
++    }
++
++    /// <summary>Rejects a buffer record without a positive declared byte size.</summary>
++    [Fact]
++    public void RejectsZeroBufferSize() {
++        Assert.Throws<ArgumentOutOfRangeException>(() => new Ps3ShaderUniformBuffer("Frame", 0, 0));
++    }
++
++    /// <summary>Rejects a null uniform-buffer collection when constructing a translation.</summary>
++    [Fact]
++    public void RejectsNullUniformBufferCollection() {
++        Assert.Throws<ArgumentNullException>(() => CreateTranslation(null));
++    }
++
++    /// <summary>Rejects null records inside the required uniform-buffer collection.</summary>
++    [Fact]
++    public void RejectsNullUniformBufferItem() {
++        Ps3ShaderUniformBuffer[] buffers = [null];
++
++        Assert.Throws<ArgumentException>(() => CreateTranslation(buffers));
++    }
++
++    /// <summary>Copies buffer metadata so later caller mutations cannot alter a translation.</summary>
++    [Fact]
++    public void CopiesUniformBufferCollection() {
++        List<Ps3ShaderUniformBuffer> buffers = [new("Frame", 0, 128)];
++
++        Ps3ShaderTranslation translation = CreateTranslation(buffers);
++        buffers.Clear();
++        buffers.Add(new Ps3ShaderUniformBuffer("Replacement", 1, 16));
++
++        Ps3ShaderUniformBuffer buffer = Assert.Single(translation.UniformBuffers);
++        Assert.Equal("Frame", buffer.BufferName);
++        Assert.Equal(0u, buffer.BufferBinding);
++        Assert.Equal(128u, buffer.ByteSize);
++        Assert.True(Assert.IsAssignableFrom<IList<Ps3ShaderUniformBuffer>>(translation.UniformBuffers).IsReadOnly);
++    }
++
++    /// <summary>Constructs a minimal translation with the explicit buffer metadata under test.</summary>
++    /// <param name="buffers">Required source buffer collection.</param>
++    /// <returns>The copied translation.</returns>
++    static Ps3ShaderTranslation CreateTranslation(IEnumerable<Ps3ShaderUniformBuffer> buffers) {
++        return new Ps3ShaderTranslation(ShaderStage.Pixel, "shader source", [], [], [], [], [], [], [], buffers);
++    }
++}

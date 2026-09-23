@@ -44,6 +44,9 @@ internal sealed unsafe class Ps3ShaderReflection {
     /// <summary>Gets active constant-buffer leaf members and their compiler-declared layout.</summary>
     public IReadOnlyList<Ps3ShaderUniformMember> UniformMembers { get; private set; } = Array.Empty<Ps3ShaderUniformMember>();
 
+    /// <summary>Gets active constant buffers and their compiler-declared compiled structure sizes.</summary>
+    public IReadOnlyList<Ps3ShaderUniformBuffer> UniformBuffers { get; private set; } = Array.Empty<Ps3ShaderUniformBuffer>();
+
     /// <summary>Gets active texture and sampler pairs after compiler-driven combined-image construction.</summary>
     public IReadOnlyList<Ps3ShaderSamplerBinding> Samplers { get; private set; } = Array.Empty<Ps3ShaderSamplerBinding>();
 
@@ -221,6 +224,7 @@ internal sealed unsafe class Ps3ShaderReflection {
         Check(Api.ResourcesGetResourceListForType(resources, ResourceType.UniformBuffer, ref resourceList, ref resourceCount));
 
         List<Ps3ShaderUniformMember> members = [];
+        List<Ps3ShaderUniformBuffer> buffers = [];
         HashSet<uint> bindings = [];
         Dictionary<uint, Dictionary<uint, string>> memberNamesByType = [];
         Dictionary<uint, string[]> authoredMemberNamesByType = [];
@@ -247,6 +251,11 @@ internal sealed unsafe class Ps3ShaderReflection {
             if (string.IsNullOrWhiteSpace(bufferName)) {
                 throw new InvalidOperationException($"Active PS3 uniform buffer at binding {binding} has neither a compiler-preserved resource name nor a named reflected base type.");
             }
+            CrossType* bufferType = Api.CompilerGetTypeHandle(Compiler, resource.BaseTypeId);
+            nuint declaredSize = 0;
+            Check(Api.CompilerGetDeclaredStructSize(Compiler, bufferType, ref declaredSize));
+            uint byteSize = checked((uint)declaredSize);
+            buffers.Add(new Ps3ShaderUniformBuffer(bufferName, binding, byteSize));
             string generatedBufferName = $"hel_ps3_uniform_buffer_binding_{binding}";
             Api.CompilerSetName(Compiler, resource.Id, generatedBufferName);
             ReflectUniformStruct(resource.BaseTypeId, bufferName, binding, generatedBufferName, string.Empty, 0, 1, 0,
@@ -257,6 +266,7 @@ internal sealed unsafe class Ps3ShaderReflection {
                 Api.CompilerSetMemberName(Compiler, typeNames.Key, memberName.Key, memberName.Value);
             }
         }
+        UniformBuffers = buffers.AsReadOnly();
         return members.AsReadOnly();
     }
 

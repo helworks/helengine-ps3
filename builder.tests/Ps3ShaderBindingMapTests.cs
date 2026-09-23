@@ -23,7 +23,8 @@ public sealed class Ps3ShaderBindingMapTests {
             new[] { new Ps3ShaderInterfaceVariable("TEXCOORD0", 0, "FP3232", 2, 1, 1, "smooth", "vertexUv") },
             Array.Empty<Ps3ShaderUniformMember>(),
             Array.Empty<Ps3ShaderSamplerBinding>(),
-            Array.Empty<Ps3ShaderSourceDependency>());
+            Array.Empty<Ps3ShaderSourceDependency>(),
+            Array.Empty<Ps3ShaderUniformBuffer>());
         Ps3ShaderTranslation pixelSource = new(
             ShaderStage.Pixel,
             "pixel source",
@@ -33,7 +34,8 @@ public sealed class Ps3ShaderBindingMapTests {
             Array.Empty<Ps3ShaderInterfaceVariable>(),
             Array.Empty<Ps3ShaderUniformMember>(),
             Array.Empty<Ps3ShaderSamplerBinding>(),
-            Array.Empty<Ps3ShaderSourceDependency>());
+            Array.Empty<Ps3ShaderSourceDependency>(),
+            Array.Empty<Ps3ShaderUniformBuffer>());
         Ps3RsxProgram vertexProgram = new(ShaderStage.Vertex, Array.Empty<byte>(), vertexDump, "test-sdk", Array.Empty<Ps3RsxParameter>());
         Ps3RsxProgram pixelProgram = new(ShaderStage.Pixel, Array.Empty<byte>(), pixelDump, "test-sdk", Array.Empty<Ps3RsxParameter>());
         Ps3ShaderBindingMapBuilder builder = new();
@@ -220,7 +222,8 @@ public sealed class Ps3ShaderBindingMapTests {
             Array.Empty<Ps3ShaderInterfaceVariable>(),
             Array.Empty<Ps3ShaderUniformMember>(),
             Array.Empty<Ps3ShaderSamplerBinding>(),
-            Array.Empty<Ps3ShaderSourceDependency>());
+            Array.Empty<Ps3ShaderSourceDependency>(),
+            Array.Empty<Ps3ShaderUniformBuffer>());
 
         Ps3ShaderBindingMap map = Map(
             Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
@@ -279,7 +282,8 @@ public sealed class Ps3ShaderBindingMapTests {
             + "#var float4 secondaryTint :  : c[3] : -1 : 1\n";
 
         Ps3ShaderBindingMap map = Map(
-            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { primary, secondary }),
+            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { primary, secondary },
+                uniformBuffers: [new("Primary", 1, 16), new("Secondary", 2, 16)]),
             Program(ShaderStage.Vertex, vertexDump, primaryParameter, secondaryParameter),
             Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
             Program(ShaderStage.Pixel, PixelOutputDump()));
@@ -299,7 +303,8 @@ public sealed class Ps3ShaderBindingMapTests {
         string vertexDump = VertexPositionLine + "#var float3x4 physicalMatrix :  : c[4], 3 : -1 : 1\n";
 
         Ps3ShaderBindingMap map = Map(
-            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { matrix }),
+            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { matrix },
+                uniformBuffers: [new("Frame", 0, 128)]),
             Program(ShaderStage.Vertex, vertexDump, parameter),
             Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
             Program(ShaderStage.Pixel, PixelOutputDump()));
@@ -318,7 +323,8 @@ public sealed class Ps3ShaderBindingMapTests {
         string vertexDump = VertexPositionLine + "#var float4 inactiveTint :  : c[0] : -1 : 0\n";
 
         Ps3ShaderBindingMap map = Map(
-            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { tint }),
+            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(), new[] { tint },
+                uniformBuffers: [new("Material", 1, 16)]),
             Program(ShaderStage.Vertex, vertexDump),
             Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
             Program(ShaderStage.Pixel, PixelOutputDump()));
@@ -375,7 +381,8 @@ public sealed class Ps3ShaderBindingMapTests {
             Array.Empty<Ps3ShaderInterfaceVariable>(),
             Array.Empty<Ps3ShaderUniformMember>(),
             Array.Empty<Ps3ShaderSamplerBinding>(),
-            Array.Empty<Ps3ShaderSourceDependency>());
+            Array.Empty<Ps3ShaderSourceDependency>(),
+            Array.Empty<Ps3ShaderUniformBuffer>());
 
         Assert.Throws<InvalidOperationException>(() => Map(
             vertexSource,
@@ -399,11 +406,14 @@ public sealed class Ps3ShaderBindingMapTests {
     /// <param name="outputs">Reflected active stage outputs.</param>
     /// <param name="uniforms">Optional reflected active uniform members.</param>
     /// <param name="samplers">Optional reflected active combined samplers.</param>
+    /// <param name="uniformBuffers">Explicit compiled-size metadata for synthetic buffers used by this fixture.</param>
     /// <returns>An immutable source translation fixture.</returns>
     static Ps3ShaderTranslation Translation(ShaderStage stage, Ps3ShaderInterfaceVariable[] inputs, Ps3ShaderInterfaceVariable[] outputs,
-        Ps3ShaderUniformMember[] uniforms = null, Ps3ShaderSamplerBinding[] samplers = null) {
+        Ps3ShaderUniformMember[] uniforms = null, Ps3ShaderSamplerBinding[] samplers = null,
+        Ps3ShaderUniformBuffer[] uniformBuffers = null) {
         return new Ps3ShaderTranslation(stage, "shader source", Array.Empty<string>(), stage == ShaderStage.Vertex ? new[] { "Position" } : Array.Empty<string>(),
-            inputs, outputs, uniforms ?? Array.Empty<Ps3ShaderUniformMember>(), samplers ?? Array.Empty<Ps3ShaderSamplerBinding>(), Array.Empty<Ps3ShaderSourceDependency>());
+            inputs, outputs, uniforms ?? Array.Empty<Ps3ShaderUniformMember>(), samplers ?? Array.Empty<Ps3ShaderSamplerBinding>(),
+            Array.Empty<Ps3ShaderSourceDependency>(), uniformBuffers ?? Array.Empty<Ps3ShaderUniformBuffer>());
     }
 
     /// <summary>Creates a parsed-program fixture around explicit Cg dump and RSX parameter data.</summary>

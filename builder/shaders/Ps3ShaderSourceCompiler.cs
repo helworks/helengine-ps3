@@ -149,7 +149,7 @@ public sealed class Ps3ShaderSourceCompiler {
             string glslSource = Marshal.PtrToStringUTF8((IntPtr)source) ?? throw new InvalidOperationException("SPIRV-Cross returned no GLSL source.");
             return new Ps3ShaderTranslation(request.Stage, glslSource, reflection.InputBuiltIns, reflection.OutputBuiltIns,
                 reflection.Inputs, reflection.Outputs,
-                reflection.UniformMembers, reflection.Samplers, dependencies);
+                reflection.UniformMembers, reflection.Samplers, dependencies, reflection.UniformBuffers);
         } finally {
             if (context != null) api.ContextDestroy(context);
         }

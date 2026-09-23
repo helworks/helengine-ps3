@@ -12,6 +12,7 @@ public sealed class Ps3ShaderTranslation {
     /// <param name="uniformMembers">Active constant-buffer members.</param>
     /// <param name="samplers">Active combined texture and sampler bindings.</param>
     /// <param name="dependencies">Active include dependencies resolved for this translation.</param>
+    /// <param name="uniformBuffers">Active constant buffers and their compiled declared structure sizes.</param>
     public Ps3ShaderTranslation(
         ShaderStage stage,
         string glslSource,
@@ -21,7 +22,8 @@ public sealed class Ps3ShaderTranslation {
         IEnumerable<Ps3ShaderInterfaceVariable> outputs,
         IEnumerable<Ps3ShaderUniformMember> uniformMembers,
         IEnumerable<Ps3ShaderSamplerBinding> samplers,
-        IEnumerable<Ps3ShaderSourceDependency> dependencies) {
+        IEnumerable<Ps3ShaderSourceDependency> dependencies,
+        IEnumerable<Ps3ShaderUniformBuffer> uniformBuffers) {
         if (string.IsNullOrWhiteSpace(glslSource)) throw new ArgumentException("Generated GLSL source must be provided.", nameof(glslSource));
         Stage = stage;
         GlslSource = glslSource;
@@ -32,6 +34,10 @@ public sealed class Ps3ShaderTranslation {
         UniformMembers = Copy(uniformMembers, nameof(uniformMembers));
         Samplers = Copy(samplers, nameof(samplers));
         Dependencies = Copy(dependencies, nameof(dependencies));
+        UniformBuffers = Copy(uniformBuffers, nameof(uniformBuffers));
+        if (UniformBuffers.Any(buffer => buffer is null)) {
+            throw new ArgumentException("Uniform-buffer metadata cannot contain null items.", nameof(uniformBuffers));
+        }
     }
 
     /// <summary>Gets the compiled vertex or pixel stage.</summary>
@@ -60,6 +66,9 @@ public sealed class Ps3ShaderTranslation {
 
     /// <summary>Gets the copied active include dependency records.</summary>
     public IReadOnlyList<Ps3ShaderSourceDependency> Dependencies { get; }
+
+    /// <summary>Gets the copied active constant-buffer records and compiler-declared structure sizes.</summary>
+    public IReadOnlyList<Ps3ShaderUniformBuffer> UniformBuffers { get; }
 
     /// <summary>Creates a read-only snapshot of one required collection.</summary>
     /// <typeparam name="T">Collection element type.</typeparam>
