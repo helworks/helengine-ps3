@@ -28,9 +28,25 @@ namespace helengine::ps3 {
         bool Initialize();
 
         /// Waits for a pending flip while pumping system callbacks (five-second diagnostic
-        /// timeout), binds the non-visible color target with the shared depth surface, sets
-        /// viewport, scissor, write masks and fixed raster state, and clears both surfaces.
-        bool BeginFrame();
+        /// timeout), binds the non-visible color target with the shared depth surface, and
+        /// sets viewport, scissor and fixed raster state. The caller can defer clearing until
+        /// the active scene camera is known.
+        /// @param deferClear True to leave color/depth clearing to the camera render adapter.
+        bool BeginFrame(bool deferClear = false);
+
+        /// Clears only the camera-enabled surface channels using the supplied packed values.
+        /// @param clearColorEnabled True to clear RGBA with packedColor.
+        /// @param clearDepthEnabled True to clear depth with packedDepthStencil.
+        /// @param clearStencilEnabled True to clear stencil with packedDepthStencil.
+        /// @param packedColor RSX A8R8G8B8 color.
+        /// @param packedDepthStencil 24-bit depth in the high bits and 8-bit stencil low.
+        /// @return False if video is not ready; true when no clear or a clear was queued.
+        bool ClearSurface(bool clearColorEnabled, bool clearDepthEnabled, bool clearStencilEnabled,
+                          u32 packedColor, u32 packedDepthStencil);
+
+        /// Clears color and depth with the native diagnostic fallback values.
+        /// @return Result of the fallback clear submission.
+        bool ClearDefaultSurface();
 
         /// Resets the flip status, queues a flip of the current render target, flushes the
         /// command stream, enqueues the GPU-side flip wait and rotates the target index.

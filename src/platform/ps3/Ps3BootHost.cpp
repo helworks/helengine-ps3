@@ -164,7 +164,7 @@ namespace helengine::ps3 {
                         pose -= TwoPi;
                     }
                 }
-                if (!video.BeginFrame()) {
+                if (!video.BeginFrame(coreSceneActive)) {
                     failed = true;
                     exitReason = "begin-frame-failed";
                     break;

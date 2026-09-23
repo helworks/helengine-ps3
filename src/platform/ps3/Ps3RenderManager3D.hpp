@@ -127,6 +127,15 @@ namespace helengine::ps3 {
         /// Last skip marker reported, so the same reason is not logged every frame.
         const char* LastSkipMarker;
 
+        /// Scene ambient RGBA intensity prepared before the ordered draw queue is visited.
+        float AmbientLight[4];
+
+        /// First supported directional light RGBA intensity for the active scene.
+        float DirectionalLight[4];
+
+        /// World-space direction of travel for the active directional light.
+        float DirectionalDirection[4];
+
         /// Reads one cooked asset through the content source and reports a clear reason on failure.
         /// @param cookedAssetPath Content-relative path to the cooked asset.
         /// @param contentStreamSource Source the path is resolved against.

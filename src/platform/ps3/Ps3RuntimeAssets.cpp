@@ -18,6 +18,14 @@ namespace helengine::ps3 {
         return MeshBuffers.IndexCount != 0;
     }
 
+    bool Ps3RuntimeModel::HasUsableNormals() const {
+        return UsableNormals;
+    }
+
+    void Ps3RuntimeModel::SetHasUsableNormals(bool value) {
+        UsableNormals = value;
+    }
+
     std::uint32_t Ps3RuntimeModel::IndexCount() const {
         return MeshBuffers.IndexCount;
     }
@@ -31,7 +39,8 @@ namespace helengine::ps3 {
     }
 
     Ps3RuntimeModel::Ps3RuntimeModel()
-        : MeshBuffers{ nullptr, 0, nullptr, 0, 0, 0 } {
+        : MeshBuffers{ nullptr, 0, nullptr, 0, 0, false, 0 }
+        , UsableNormals(false) {
         // Core walks the submesh list during draw, so an empty list is supplied rather than
         // leaving it null. Real geometry replaces this once the RSX buffers are built.
         SetSubmeshes(new Array<::RuntimeSubmesh*>(0));

@@ -55,6 +55,13 @@ namespace helengine::ps3 {
         /// Reports whether RSX buffers have been uploaded for this model.
         bool HasGeometry() const;
 
+        /// Reports whether every source vertex has a finite, non-zero normal.
+        bool HasUsableNormals() const;
+
+        /// Records whether cooked vertex normals are safe for lit draws.
+        /// @param value True when every position has a usable normal.
+        void SetHasUsableNormals(bool value);
+
         /// Returns the number of indices the model would draw.
         std::uint32_t IndexCount() const;
 
@@ -68,6 +75,9 @@ namespace helengine::ps3 {
     private:
         /// RSX buffers this model owns, zeroed until geometry is uploaded.
         Ps3MeshBuffers MeshBuffers;
+
+        /// True when cooked normals match the vertex count and are usable.
+        bool UsableNormals;
     };
 }
 

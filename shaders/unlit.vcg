@@ -1,8 +1,18 @@
-// Unlit vertex program: transforms the model-space position by the combined
-// model/view/projection matrix and passes the per-vertex face color through.
-void main(float3 position : POSITION, float4 color : COLOR0,
-          uniform float4x4 mvp,
+// Shared PS3 vertex program: preserves the unlit vertex color unless the material
+// requests basic ambient-plus-directional Lambert lighting.
+void main(float3 position : POSITION, float3 normal : NORMAL, float4 color : COLOR0,
+          uniform float4x4 mvp, uniform float4x4 normalTransform,
+          uniform float4 materialColor, uniform float4 ambientLight,
+          uniform float4 directionalLight, uniform float4 directionalDirection,
+          uniform float lit,
           out float4 clip : POSITION, out float4 tint : COLOR0) {
     clip = mul(mvp, float4(position, 1.0));
-    tint = color;
+    if (lit > 0.5) {
+        float3 worldNormal = normalize(mul((float3x3)normalTransform, normal));
+        float diffuse = max(dot(worldNormal, normalize(-directionalDirection.xyz)), 0.0);
+        float3 illumination = ambientLight.rgb + directionalLight.rgb * diffuse;
+        tint = float4(color.rgb * materialColor.rgb * illumination, color.a * materialColor.a);
+    } else {
+        tint = color;
+    }
 }

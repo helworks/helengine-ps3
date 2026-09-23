@@ -26,8 +26,15 @@ namespace helengine::ps3 {
         , FragmentUcodeOffset(0)
         , FragmentUcodeBytes(0)
         , ModelViewProjectionConstant(nullptr)
+        , NormalTransformConstant(nullptr)
+        , MaterialColorConstant(nullptr)
+        , AmbientLightConstant(nullptr)
+        , DirectionalLightConstant(nullptr)
+        , DirectionalDirectionConstant(nullptr)
+        , LitConstant(nullptr)
         , PositionAttributeIndex(0)
         , ColorAttributeIndex(0)
+        , NormalAttributeIndex(0)
         , VertexBuffer(nullptr)
         , VertexBufferOffset(0)
         , VertexBufferBytes(0)
@@ -67,6 +74,23 @@ namespace helengine::ps3 {
         if (ModelViewProjectionConstant->type != PARAM_FLOAT4x4 || ModelViewProjectionConstant->count != 4) {
             std::printf("PS3_SHADER_ERROR stage=reflect reason=mvp-unexpected-layout type=%u count=%u\n",
                         static_cast<unsigned>(ModelViewProjectionConstant->type), static_cast<unsigned>(ModelViewProjectionConstant->count));
+            return false;
+        }
+        NormalTransformConstant = rsxVertexProgramGetConst(VertexProgram, "normalTransform");
+        MaterialColorConstant = rsxVertexProgramGetConst(VertexProgram, "materialColor");
+        AmbientLightConstant = rsxVertexProgramGetConst(VertexProgram, "ambientLight");
+        DirectionalLightConstant = rsxVertexProgramGetConst(VertexProgram, "directionalLight");
+        DirectionalDirectionConstant = rsxVertexProgramGetConst(VertexProgram, "directionalDirection");
+        LitConstant = rsxVertexProgramGetConst(VertexProgram, "lit");
+        if (NormalTransformConstant == nullptr || MaterialColorConstant == nullptr || AmbientLightConstant == nullptr ||
+            DirectionalLightConstant == nullptr || DirectionalDirectionConstant == nullptr || LitConstant == nullptr) {
+            std::printf("PS3_SHADER_ERROR stage=reflect reason=lighting-constant-missing normalTransform=%d material=%d ambient=%d directional=%d direction=%d lit=%d\n",
+                        NormalTransformConstant != nullptr ? 1 : 0,
+                        MaterialColorConstant != nullptr ? 1 : 0,
+                        AmbientLightConstant != nullptr ? 1 : 0,
+                        DirectionalLightConstant != nullptr ? 1 : 0,
+                        DirectionalDirectionConstant != nullptr ? 1 : 0,
+                        LitConstant != nullptr ? 1 : 0);
             return false;
         }
         if (!ReflectAttributes()) {
@@ -121,10 +145,11 @@ namespace helengine::ps3 {
         }
 
         Initialized = true;
-        std::printf("PS3_RENDERER_READY vertexUcodeBytes=%u fragmentUcodeBytes=%u vertexBytes=%u indexBytes=%u mvpIndex=%u mvpBase=%u positionAttrib=%u colorAttrib=%u ownedBytes=%u\n",
+        std::printf("PS3_RENDERER_READY vertexUcodeBytes=%u fragmentUcodeBytes=%u vertexBytes=%u indexBytes=%u mvpIndex=%u mvpBase=%u positionAttrib=%u normalAttrib=%u colorAttrib=%u ownedBytes=%u\n",
                     VertexUcodeBytes, FragmentUcodeBytes, VertexBufferBytes, IndexBufferBytes,
                     static_cast<unsigned>(ModelViewProjectionConstant->index), static_cast<unsigned>(VertexProgram->const_start),
-                    static_cast<unsigned>(PositionAttributeIndex), static_cast<unsigned>(ColorAttributeIndex), OwnedBytesValue);
+                    static_cast<unsigned>(PositionAttributeIndex), static_cast<unsigned>(NormalAttributeIndex),
+                    static_cast<unsigned>(ColorAttributeIndex), OwnedBytesValue);
         return true;
     }
 
@@ -132,6 +157,7 @@ namespace helengine::ps3 {
         const u16 attributeCount = rsxVertexProgramGetNumAttrib(VertexProgram);
         const rsxProgramAttrib* attributes = rsxVertexProgramGetAttribs(VertexProgram);
         bool positionFound = false;
+        bool normalFound = false;
         bool colorFound = false;
         for (u16 attribute = 0; attribute < attributeCount; ++attribute) {
             const char* name = reinterpret_cast<const char*>(reinterpret_cast<const u8*>(VertexProgram) + attributes[attribute].name_off);
@@ -142,11 +168,15 @@ namespace helengine::ps3 {
             } else if (attributes[attribute].index == GCM_VERTEX_ATTRIB_COLOR0) {
                 ColorAttributeIndex = GCM_VERTEX_ATTRIB_COLOR0;
                 colorFound = true;
+            } else if (attributes[attribute].index == GCM_VERTEX_ATTRIB_NORMAL) {
+                NormalAttributeIndex = GCM_VERTEX_ATTRIB_NORMAL;
+                normalFound = true;
             }
         }
-        if (!positionFound || !colorFound) {
-            std::printf("PS3_SHADER_ERROR stage=reflect reason=attributes-missing position=%d color=%d count=%u\n",
-                        positionFound ? 1 : 0, colorFound ? 1 : 0, static_cast<unsigned>(attributeCount));
+        if (!positionFound || !normalFound || !colorFound) {
+            std::printf("PS3_SHADER_ERROR stage=reflect reason=attributes-missing position=%d normal=%d color=%d count=%u\n",
+                        positionFound ? 1 : 0, normalFound ? 1 : 0, colorFound ? 1 : 0,
+                        static_cast<unsigned>(attributeCount));
             return false;
         }
         return true;
@@ -161,23 +191,18 @@ namespace helengine::ps3 {
             std::printf("PS3_RENDERER_ERROR stage=draw reason=not-initialized\n");
             return false;
         }
-        rsxBindVertexArrayAttrib(ContextValue, PositionAttributeIndex, 0, VertexBufferOffset + PositionByteOffset, VertexStride, 3, GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
-        rsxBindVertexArrayAttrib(ContextValue, ColorAttributeIndex, 0, VertexBufferOffset + ColorByteOffset, VertexStride, 4, GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
-        rsxLoadVertexProgram(ContextValue, VertexProgram, VertexUcode);
-        UploadModelViewProjection(modelViewProjection);
-        rsxLoadFragmentProgramLocation(ContextValue, FragmentProgram, FragmentUcodeOffset, GCM_LOCATION_RSX);
-        rsxSetDepthTestEnable(ContextValue, GCM_TRUE);
-        rsxSetDepthFunc(ContextValue, GCM_LESS);
-        rsxSetDepthWriteEnable(ContextValue, GCM_TRUE);
-        rsxSetBlendEnable(ContextValue, GCM_FALSE);
-        rsxSetShadeModel(ContextValue, GCM_SHADE_MODEL_SMOOTH);
-        rsxSetFrontFace(ContextValue, GCM_FRONTFACE_CCW);
-        rsxSetCullFace(ContextValue, GCM_CULL_BACK);
-        rsxSetCullFaceEnable(ContextValue, GCM_TRUE);
-        rsxSetUserClipPlaneControl(ContextValue, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE,
-                                   GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE);
-        rsxDrawIndexArray(ContextValue, GCM_TYPE_TRIANGLES, IndexBufferOffset, static_cast<u32>(Ps3CubeMesh::IndexCount), GCM_INDEX_TYPE_16B, GCM_LOCATION_RSX);
-        ++DrawCounter;
+        const Ps3Matrix4 identity = { { 1.0f, 0.0f, 0.0f, 0.0f,
+                                        0.0f, 1.0f, 0.0f, 0.0f,
+                                        0.0f, 0.0f, 1.0f, 0.0f,
+                                        0.0f, 0.0f, 0.0f, 1.0f } };
+        const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        const float noDirectionalLight[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        const float direction[4] = { 0.0f, -1.0f, 0.0f, 0.0f };
+        Ps3MeshBuffers cube{ VertexBuffer, VertexBufferOffset, IndexBuffer, IndexBufferOffset,
+                             static_cast<u32>(Ps3CubeMesh::IndexCount), false, VertexBufferBytes + IndexBufferBytes };
+        if (!DrawIndexed(cube, modelViewProjection, identity, white, false, white, noDirectionalLight, direction)) {
+            return false;
+        }
         if (DrawCounter == 1) {
             std::printf("PS3_FIRST_DRAW indices=%d vertices=%d\n", Ps3CubeMesh::IndexCount, Ps3CubeMesh::VertexCount);
         }
@@ -239,19 +264,31 @@ namespace helengine::ps3 {
         buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, false, 0 };
     }
 
-    bool Ps3RasterRenderer::DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection) {
+    bool Ps3RasterRenderer::DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection,
+                                        const Ps3Matrix4& normalTransform, const float materialColor[4], bool lit,
+                                        const float ambientLight[4], const float directionalLight[4],
+                                        const float directionalDirection[4]) {
         if (!Initialized) {
             std::printf("PS3_RENDERER_ERROR stage=draw-indexed reason=not-initialized\n");
             return false;
         }
-        if (buffers.IndexCount == 0 || buffers.VertexBuffer == nullptr || buffers.IndexBuffer == nullptr) {
+        if (buffers.IndexCount == 0 || buffers.VertexBuffer == nullptr || buffers.IndexBuffer == nullptr ||
+            materialColor == nullptr || ambientLight == nullptr || directionalLight == nullptr || directionalDirection == nullptr) {
             return false;
         }
         // Same pipeline and render state as the built-in cube; only the geometry differs.
         rsxBindVertexArrayAttrib(ContextValue, PositionAttributeIndex, 0, buffers.VertexBufferOffset + PositionByteOffset, VertexStride, 3, GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
+        rsxBindVertexArrayAttrib(ContextValue, NormalAttributeIndex, 0, buffers.VertexBufferOffset + NormalByteOffset, VertexStride, 3, GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
         rsxBindVertexArrayAttrib(ContextValue, ColorAttributeIndex, 0, buffers.VertexBufferOffset + ColorByteOffset, VertexStride, 4, GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
         rsxLoadVertexProgram(ContextValue, VertexProgram, VertexUcode);
         UploadModelViewProjection(modelViewProjection);
+        rsxSetVertexProgramParameter(ContextValue, VertexProgram, NormalTransformConstant, normalTransform.Values);
+        rsxSetVertexProgramParameter(ContextValue, VertexProgram, MaterialColorConstant, materialColor);
+        rsxSetVertexProgramParameter(ContextValue, VertexProgram, AmbientLightConstant, ambientLight);
+        rsxSetVertexProgramParameter(ContextValue, VertexProgram, DirectionalLightConstant, directionalLight);
+        rsxSetVertexProgramParameter(ContextValue, VertexProgram, DirectionalDirectionConstant, directionalDirection);
+        const float litValue = lit ? 1.0f : 0.0f;
+        rsxSetVertexProgramParameter(ContextValue, VertexProgram, LitConstant, &litValue);
         rsxLoadFragmentProgramLocation(ContextValue, FragmentProgram, FragmentUcodeOffset, GCM_LOCATION_RSX);
         rsxSetDepthTestEnable(ContextValue, GCM_TRUE);
         rsxSetDepthFunc(ContextValue, GCM_LESS);

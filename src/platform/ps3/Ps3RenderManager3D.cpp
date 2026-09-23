@@ -3,19 +3,25 @@
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
 
 #include <cstdio>
+#include <cmath>
 
 #include "AssetSerializer.hpp"
 #include "Core.hpp"
+#include "AmbientLightComponent.hpp"
+#include "CameraClearSettings.hpp"
+#include "DirectionalLightComponent.hpp"
 #include "Entity.hpp"
 #include "ICamera.hpp"
 #include "IContentStreamSource.hpp"
 #include "IDrawable3D.hpp"
 #include "IRenderQueue3D.hpp"
+#include "LightDirectionUtility.hpp"
 #include "ObjectManager.hpp"
 #include "ModelAsset.hpp"
 #include "ModelAssetIndexData.hpp"
 #include "PlatformMaterialAsset.hpp"
 #include "float3.hpp"
+#include "float4.hpp"
 #include "runtime/native_list.hpp"
 #include "system/io/stream.hpp"
 
@@ -55,6 +61,36 @@ namespace helengine::ps3 {
             result.Values[15] = matrix.M44;
             return result;
         }
+
+        /// Converts one normalized channel into an RSX color byte, mapping non-finite values to zero.
+        u32 ToColorByte(float value) {
+            if (!std::isfinite(value) || value <= 0.0f) {
+                return 0;
+            }
+            if (value >= 1.0f) {
+                return 255;
+            }
+            return static_cast<u32>(value * 255.0f + 0.5f);
+        }
+
+        /// Packs the authored RGBA camera clear color into RSX A8R8G8B8 order.
+        u32 PackCameraColor(const ::float4& color) {
+            return (ToColorByte(color.W) << 24) |
+                   (ToColorByte(color.X) << 16) |
+                   (ToColorByte(color.Y) << 8) |
+                   ToColorByte(color.Z);
+        }
+
+        /// Packs normalized depth and stencil into the RSX Z24S8 clear register.
+        u32 PackCameraDepthStencil(float depth, u8 stencil) {
+            if (!std::isfinite(depth) || depth <= 0.0f) {
+                depth = 0.0f;
+            } else if (depth >= 1.0f) {
+                depth = 1.0f;
+            }
+            const u32 depth24 = static_cast<u32>(static_cast<double>(depth) * 16777215.0 + 0.5);
+            return (depth24 << 8) | static_cast<u32>(stencil);
+        }
     }
 
     Ps3RenderManager3D::Ps3RenderManager3D(Ps3Video& video, Ps3RasterRenderer& renderer)
@@ -73,6 +109,18 @@ namespace helengine::ps3 {
         , LoggedCamera(false)
         , LoggedFirstVisit(false)
         , LastSkipMarker(nullptr) {
+        AmbientLight[0] = 0.2f;
+        AmbientLight[1] = 0.2f;
+        AmbientLight[2] = 0.2f;
+        AmbientLight[3] = 1.0f;
+        DirectionalLight[0] = 0.0f;
+        DirectionalLight[1] = 0.0f;
+        DirectionalLight[2] = 0.0f;
+        DirectionalLight[3] = 1.0f;
+        DirectionalDirection[0] = 0.0f;
+        DirectionalDirection[1] = -1.0f;
+        DirectionalDirection[2] = 0.0f;
+        DirectionalDirection[3] = 0.0f;
     }
 
     void Ps3RenderManager3D::NoteSkip(const char* marker) {
@@ -114,18 +162,93 @@ namespace helengine::ps3 {
         // that is merely absent looks identical on screen to one that is broken.
         ::Core* core = get_OwnerCore();
         if (core == nullptr || core->get_ObjectManager() == nullptr) {
+            Video.ClearDefaultSurface();
             NoteSkip("no-object-manager");
             return;
         }
         ::List<::ICamera*>* cameras = core->get_ObjectManager()->get_Cameras();
         if (cameras == nullptr || cameras->get_Count() == 0) {
+            Video.ClearDefaultSurface();
             NoteSkip("no-camera");
             return;
         }
         ::ICamera* camera = cameras->get_Item(0);
-        if (camera == nullptr || camera->get_Parent() == nullptr || camera->get_RenderQueue3D() == nullptr) {
+        if (camera == nullptr) {
+            Video.ClearDefaultSurface();
             NoteSkip("camera-incomplete");
             return;
+        }
+
+        ::CameraClearSettings clearSettings = camera->get_ClearSettings();
+        const ::float4 clearColor = clearSettings.get_ClearColor();
+        if (!Video.ClearSurface(clearSettings.get_ClearColorEnabled(),
+                                clearSettings.get_ClearDepthEnabled(),
+                                clearSettings.get_ClearStencilEnabled(),
+                                PackCameraColor(clearColor),
+                                PackCameraDepthStencil(clearSettings.get_ClearDepth(), clearSettings.get_ClearStencil()))) {
+            NoteSkip("camera-clear-failed");
+            return;
+        }
+        if (camera->get_Parent() == nullptr || camera->get_RenderQueue3D() == nullptr) {
+            NoteSkip("camera-incomplete");
+            return;
+        }
+
+        AmbientLight[0] = 0.2f;
+        AmbientLight[1] = 0.2f;
+        AmbientLight[2] = 0.2f;
+        AmbientLight[3] = 1.0f;
+        DirectionalLight[0] = 0.0f;
+        DirectionalLight[1] = 0.0f;
+        DirectionalLight[2] = 0.0f;
+        DirectionalLight[3] = 1.0f;
+        DirectionalDirection[0] = 0.0f;
+        DirectionalDirection[1] = -1.0f;
+        DirectionalDirection[2] = 0.0f;
+        DirectionalDirection[3] = 0.0f;
+
+        ::List<::AmbientLightComponent*>* ambientLights = core->get_ObjectManager()->get_AmbientLights();
+        if (ambientLights != nullptr && ambientLights->get_Count() > 0) {
+            ::AmbientLightComponent* light = ambientLights->get_Item(0);
+            if (light != nullptr) {
+                const ::float4 color = light->get_Color();
+                const float intensity = light->get_Intensity();
+                AmbientLight[0] = color.X * intensity;
+                AmbientLight[1] = color.Y * intensity;
+                AmbientLight[2] = color.Z * intensity;
+                AmbientLight[3] = 1.0f;
+            }
+        }
+        ::List<::DirectionalLightComponent*>* directionalLights = core->get_ObjectManager()->get_DirectionalLights();
+        if (directionalLights != nullptr && directionalLights->get_Count() > 0) {
+            ::DirectionalLightComponent* light = directionalLights->get_Item(0);
+            if (light != nullptr) {
+                const ::float4 color = light->get_Color();
+                const float intensity = light->get_Intensity();
+                const ::float3 direction = ::LightDirectionUtility::GetLightDirection(light);
+                DirectionalLight[0] = color.X * intensity;
+                DirectionalLight[1] = color.Y * intensity;
+                DirectionalLight[2] = color.Z * intensity;
+                DirectionalLight[3] = 1.0f;
+                DirectionalDirection[0] = direction.X;
+                DirectionalDirection[1] = direction.Y;
+                DirectionalDirection[2] = direction.Z;
+                DirectionalDirection[3] = 0.0f;
+            }
+        }
+        if (DrawCounter == 1) {
+            std::printf("PS3_CORE_LIGHTING ambient=%.3f,%.3f,%.3f directional=%.3f,%.3f,%.3f direction=%.3f,%.3f,%.3f\n",
+                        static_cast<double>(AmbientLight[0]), static_cast<double>(AmbientLight[1]), static_cast<double>(AmbientLight[2]),
+                        static_cast<double>(DirectionalLight[0]), static_cast<double>(DirectionalLight[1]), static_cast<double>(DirectionalLight[2]),
+                        static_cast<double>(DirectionalDirection[0]), static_cast<double>(DirectionalDirection[1]), static_cast<double>(DirectionalDirection[2]));
+            std::printf("PS3_CORE_CAMERA_CLEAR enabled=%d rgba=%.3f,%.3f,%.3f,%.3f depthEnabled=%d depth=%.3f stencilEnabled=%d stencil=%u\n",
+                        clearSettings.get_ClearColorEnabled() ? 1 : 0,
+                        static_cast<double>(clearColor.X), static_cast<double>(clearColor.Y),
+                        static_cast<double>(clearColor.Z), static_cast<double>(clearColor.W),
+                        clearSettings.get_ClearDepthEnabled() ? 1 : 0,
+                        static_cast<double>(clearSettings.get_ClearDepth()),
+                        clearSettings.get_ClearStencilEnabled() ? 1 : 0,
+                        static_cast<unsigned>(clearSettings.get_ClearStencil()));
         }
 
         // The view is the inverse of the camera's world transform, and the projection uses the
@@ -198,7 +321,34 @@ namespace helengine::ps3 {
             NoteSkip("model-without-geometry");
             return;
         }
-        if (!Renderer.DrawIndexed(model->Buffers(), ToRowMajor(modelViewProjection))) {
+        ::Array<::RuntimeMaterial*>* materials = drawable->get_Materials();
+        Ps3RuntimeMaterial* material = nullptr;
+        if (materials != nullptr && materials->get_Length() > 0) {
+            material = dynamic_cast<Ps3RuntimeMaterial*>((*materials)[0]);
+            if (material == nullptr) {
+                NoteSkip("drawable-without-ps3-material");
+                return;
+            }
+        }
+        const bool lit = material != nullptr && material->Lit;
+        if (lit && !model->HasUsableNormals()) {
+            NoteSkip("lit-model-without-usable-normals");
+            return;
+        }
+        const float materialColor[4] = {
+            material == nullptr ? 1.0f : static_cast<float>(material->BaseColorR) / 255.0f,
+            material == nullptr ? 1.0f : static_cast<float>(material->BaseColorG) / 255.0f,
+            material == nullptr ? 1.0f : static_cast<float>(material->BaseColorB) / 255.0f,
+            material == nullptr ? 1.0f : static_cast<float>(material->BaseColorA) / 255.0f
+        };
+        ::float4x4 normalTransform = ::float4x4::get_Identity();
+        if (lit && !::float4x4::TryInverseTranspose__ref0_out1(world, normalTransform)) {
+            NoteSkip("lit-draw-transform-not-invertible");
+            return;
+        }
+        const Ps3Matrix4 packedModelViewProjection = ToRowMajor(modelViewProjection);
+        if (!Renderer.DrawIndexed(model->Buffers(), packedModelViewProjection, ToRowMajor(normalTransform),
+                                  materialColor, lit, AmbientLight, DirectionalLight, DirectionalDirection)) {
             NoteSkip("draw-submit-failed");
             return;
         }
@@ -226,18 +376,39 @@ namespace helengine::ps3 {
         }
 
         Ps3Vertex* vertices = new Ps3Vertex[vertexCount];
+        Array<::float3>* normals = data->Normals;
+        bool usableNormals = normals != nullptr && static_cast<std::uint32_t>(normals->get_Length()) == vertexCount;
         for (std::uint32_t index = 0; index < vertexCount; ++index) {
             const ::float3 position = (*positions)[static_cast<int32_t>(index)];
             vertices[index].Position[0] = position.X;
             vertices[index].Position[1] = position.Y;
             vertices[index].Position[2] = position.Z;
-            // The vertex program has no material constant yet, so geometry is uploaded white
-            // and the cooked material colour is not applied. This is visible in the log.
+            if (usableNormals) {
+                const ::float3 normal = (*normals)[static_cast<int32_t>(index)];
+                const float normalLengthSquared = normal.X * normal.X + normal.Y * normal.Y + normal.Z * normal.Z;
+                if (!std::isfinite(normal.X) || !std::isfinite(normal.Y) || !std::isfinite(normal.Z) ||
+                    !std::isfinite(normalLengthSquared) || normalLengthSquared <= 1.0e-12f) {
+                    usableNormals = false;
+                    vertices[index].Normal[0] = 0.0f;
+                    vertices[index].Normal[1] = 0.0f;
+                    vertices[index].Normal[2] = 1.0f;
+                } else {
+                    vertices[index].Normal[0] = normal.X;
+                    vertices[index].Normal[1] = normal.Y;
+                    vertices[index].Normal[2] = normal.Z;
+                }
+            } else {
+                vertices[index].Normal[0] = 0.0f;
+                vertices[index].Normal[1] = 0.0f;
+                vertices[index].Normal[2] = 1.0f;
+            }
+            // The lit path multiplies this vertex tint by the cooked material color.
             vertices[index].Color[0] = 1.0f;
             vertices[index].Color[1] = 1.0f;
             vertices[index].Color[2] = 1.0f;
             vertices[index].Color[3] = 1.0f;
         }
+        model->SetHasUsableNormals(usableNormals);
 
         // Copied into a flat array because the generated arrays are not guaranteed contiguous
         // in a form RSX can read directly.

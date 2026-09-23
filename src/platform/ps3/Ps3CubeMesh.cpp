@@ -13,6 +13,7 @@ namespace helengine::ps3 {
                                        float r, float g, float b) {
             return Ps3Vertex{
                 { nx + uSign * ux + vSign * vx, ny + uSign * uy + vSign * vy, nz + uSign * uz + vSign * vz },
+                { nx, ny, nz },
                 { r, g, b, 1.0f }
             };
         }

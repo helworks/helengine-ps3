@@ -195,7 +195,7 @@ namespace helengine::ps3 {
         rsxSetSurface(ContextValue, &surface);
     }
 
-    bool Ps3Video::BeginFrame() {
+    bool Ps3Video::BeginFrame(bool deferClear) {
         if (!Ready) {
             std::printf("PS3_VIDEO_ERROR stage=BeginFrame reason=not-ready\n");
             return false;
@@ -225,10 +225,37 @@ namespace helengine::ps3 {
         rsxSetAlphaTestEnable(ContextValue, GCM_FALSE);
         rsxSetLogicOpEnable(ContextValue, GCM_FALSE);
         rsxSetDepthWriteEnable(ContextValue, GCM_TRUE);
-        rsxSetClearColor(ContextValue, ClearColor);
-        rsxSetClearDepthStencil(ContextValue, ClearDepthStencil);
-        rsxClearSurface(ContextValue, GCM_CLEAR_M);
+        return deferClear || ClearDefaultSurface();
+    }
+
+    bool Ps3Video::ClearSurface(bool clearColorEnabled, bool clearDepthEnabled, bool clearStencilEnabled,
+                                u32 packedColor, u32 packedDepthStencil) {
+        if (!Ready) {
+            std::printf("PS3_VIDEO_ERROR stage=ClearSurface reason=not-ready\n");
+            return false;
+        }
+        u32 mask = 0;
+        if (clearColorEnabled) {
+            mask |= GCM_CLEAR_R | GCM_CLEAR_G | GCM_CLEAR_B | GCM_CLEAR_A;
+            rsxSetClearColor(ContextValue, packedColor);
+        }
+        if (clearDepthEnabled || clearStencilEnabled) {
+            if (clearDepthEnabled) {
+                mask |= GCM_CLEAR_Z;
+            }
+            if (clearStencilEnabled) {
+                mask |= GCM_CLEAR_S;
+            }
+            rsxSetClearDepthStencil(ContextValue, packedDepthStencil);
+        }
+        if (mask != 0) {
+            rsxClearSurface(ContextValue, mask);
+        }
         return true;
+    }
+
+    bool Ps3Video::ClearDefaultSurface() {
+        return ClearSurface(true, true, true, ClearColor, ClearDepthStencil);
     }
 
     bool Ps3Video::Present() {

@@ -38,8 +38,8 @@ namespace helengine::ps3 {
     };
 
     /// Owns the GPU resources for the unlit cube and submits its draw: the embedded
-    /// vertex/fragment programs (reflected for the POSITION/COLOR0 attributes and the
-    /// mvp constant), the fragment microcode copied into RSX memory, and static vertex
+    /// vertex/fragment programs (reflected for POSITION/NORMAL/COLOR0 and lighting
+    /// constants), the fragment microcode copied into RSX memory, and static vertex
     /// and index buffers uploaded once. Draw binds attributes and programs, uploads the
     /// matrix, sets depth/cull state and issues one indexed triangle draw; nothing is
     /// allocated per frame. Copying is disabled because the object owns GPU resources.
@@ -62,7 +62,7 @@ namespace helengine::ps3 {
         bool Draw(const Ps3Matrix4& modelViewProjection);
 
         /// Uploads one authored mesh into RSX memory.
-        /// @param vertices Vertex array in the renderer's 28-byte layout.
+        /// @param vertices Vertex array in the renderer's 40-byte layout.
         /// @param vertexCount Number of vertices.
         /// @param indices Triangle-list indices, 16 or 32 bit as declared below.
         /// @param indexCount Number of indices; must be a multiple of three.
@@ -76,11 +76,20 @@ namespace helengine::ps3 {
         /// @param buffers Buffers to release; zeroed on return.
         void ReleaseMesh(Ps3MeshBuffers& buffers);
 
-        /// Submits one uploaded mesh with the given row-major model/view/projection matrix.
+        /// Submits one uploaded mesh with the given transform and material/light inputs.
         /// @param buffers Mesh to draw.
-        /// @param modelViewProjection Row-major matrix uploaded to the vertex program.
+        /// @param modelViewProjection Row-major model/view/projection matrix.
+        /// @param normalTransform Row-major inverse-transpose transform for model-space normals.
+        /// @param materialColor Base color as normalized RGBA channels.
+        /// @param lit True to shade with scene light values; false preserves vertex color.
+        /// @param ambientLight RGBA ambient light intensity.
+        /// @param directionalLight RGBA directional light intensity.
+        /// @param directionalDirection World-space direction in which light rays travel.
         /// @return True when the draw was submitted.
-        bool DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection);
+        bool DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection,
+                         const Ps3Matrix4& normalTransform, const float materialColor[4], bool lit,
+                         const float ambientLight[4], const float directionalLight[4],
+                         const float directionalDirection[4]);
 
         /// Releases only the resources this renderer acquired. The caller must have drained
         /// GPU work successfully first; embedded program storage is static and never freed.
@@ -100,13 +109,16 @@ namespace helengine::ps3 {
         static constexpr u32 FragmentUcodeAlignment = 64;
 
         /// Bytes between consecutive vertices (sizeof(Ps3Vertex)).
-        static constexpr u8 VertexStride = 28;
+        static constexpr u8 VertexStride = 40;
 
         /// Byte offset of the position inside a vertex.
         static constexpr u32 PositionByteOffset = 0;
 
+        /// Byte offset of the normal inside a vertex.
+        static constexpr u32 NormalByteOffset = 12;
+
         /// Byte offset of the color inside a vertex.
-        static constexpr u32 ColorByteOffset = 12;
+        static constexpr u32 ColorByteOffset = 24;
 
         /// RSX command context borrowed from the video owner.
         gcmContextData* ContextValue;
@@ -135,11 +147,32 @@ namespace helengine::ps3 {
         /// Reflected mvp constant of the vertex program.
         const rsxProgramConst* ModelViewProjectionConstant;
 
+        /// Reflected inverse-transpose normal matrix constant of the vertex program.
+        const rsxProgramConst* NormalTransformConstant;
+
+        /// Reflected material base color constant.
+        const rsxProgramConst* MaterialColorConstant;
+
+        /// Reflected ambient light constant.
+        const rsxProgramConst* AmbientLightConstant;
+
+        /// Reflected directional light color/intensity constant.
+        const rsxProgramConst* DirectionalLightConstant;
+
+        /// Reflected direction-of-travel constant for the directional light.
+        const rsxProgramConst* DirectionalDirectionConstant;
+
+        /// Reflected material lighting selector constant.
+        const rsxProgramConst* LitConstant;
+
         /// Hardware attribute index reflected for POSITION.
         u8 PositionAttributeIndex;
 
         /// Hardware attribute index reflected for COLOR0.
         u8 ColorAttributeIndex;
+
+        /// Hardware attribute index reflected for NORMAL.
+        u8 NormalAttributeIndex;
 
         /// RSX-local vertex buffer (24 vertices).
         void* VertexBuffer;
@@ -168,7 +201,7 @@ namespace helengine::ps3 {
         /// True once Initialize() completed.
         bool Initialized;
 
-        /// Finds the reflected attribute indices for POSITION and COLOR0 and logs the attribute table.
+        /// Finds the reflected attribute indices for POSITION, NORMAL and COLOR0 and logs the attribute table.
         bool ReflectAttributes();
 
         /// Uploads the matrix to the vertex program's mvp constant. The pinned SDK writes the
