@@ -1,0 +1,146 @@
+warning: in the working copy of 'engine/helengine.editor.tests/managers/project/EditorPlatformAssetCookServiceTests.cs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/engine/helengine.editor.tests/managers/project/EditorPlatformAssetCookServiceTests.cs b/engine/helengine.editor.tests/managers/project/EditorPlatformAssetCookServiceTests.cs
+index 1fa45ecf..3b9c29a1 100644
+--- a/engine/helengine.editor.tests/managers/project/EditorPlatformAssetCookServiceTests.cs
++++ b/engine/helengine.editor.tests/managers/project/EditorPlatformAssetCookServiceTests.cs
+@@ -490,21 +490,21 @@ public sealed class EditorPlatformAssetCookServiceTests : IDisposable {
+         using FileStream stream = new FileStream(cookedMaterialPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+         ShaderMaterialAsset cookedMaterial = Assert.IsType<ShaderMaterialAsset>(AssetSerializer.Deserialize(stream));
+         Assert.Equal("ForwardStandardShader", cookedMaterial.ShaderAssetId);
+         MaterialConstantBufferAsset baseColorBuffer = Assert.Single(
+             cookedMaterial.ConstantBuffers,
+             buffer => string.Equals(buffer.Name, "BaseColorBuffer", StringComparison.Ordinal));
+         Assert.Equal(16, baseColorBuffer.Data.Length);
+     }
+ 
+     /// <summary>
+-    /// Verifies a shader-capable platform receives resolved shader source text and contributes its explicitly declared bundle to the cooked manifest.
++    /// Verifies a shader-capable platform receives built-in shader source text and provenance and contributes its explicitly declared bundle to the cooked manifest.
+     /// </summary>
+     [Fact]
+     public void Cook_whenPlatformBuilderSupportsShaderArtifacts_resolvesSourcesAndCollectsDeclaredBundle() {
+         const string scenePath = "Scenes/VitaShaderBundle.helen";
+         const string materialPath = "Materials/VitaShaderBundle.hasset";
+         WriteMaterialAsset(materialPath, "VitaShaderBundle");
+         WriteSceneAssetWithMaterial(scenePath, materialPath);
+         ShaderArtifactTestPlatformMaterialAssetBuilder builder = new();
+         EditorPlatformAssetCookService service = new(
+             ProjectRootPath,
+@@ -522,20 +522,88 @@ public sealed class EditorPlatformAssetCookServiceTests : IDisposable {
+             ["VitaShaderBundle"],
+             BuildRootPath,
+             ["psvita"],
+             builder,
+             "debug",
+             "gxm");
+ 
+         PlatformShaderArtifactCookRequest request = Assert.IsType<PlatformShaderArtifactCookRequest>(builder.LastShaderArtifactCookRequest);
+         PlatformShaderArtifactCookSource source = Assert.Single(request.ShaderSources);
+         Assert.Equal("ForwardStandardShader", source.ShaderAssetId);
++        string expectedPath = BuiltInShaderAssetLibrary.ResolveShaderPath("ForwardStandardShader.hlsl");
++        Assert.True(source.HasSourcePath);
++        Assert.Equal(Path.GetFullPath(expectedPath), source.SourcePath);
++        Assert.Equal(File.ReadAllText(expectedPath), source.SourceText);
++        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(expectedPath))), source.SourceHash);
++        Assert.Contains(manifest.CookedArtifacts, artifact => artifact.RelativePath == "cooked/shaders/psvita/shaders.psvb" && artifact.ArtifactKind == "shader");
++    }
++
++    /// <summary>
++    /// Verifies the editor hands an authored shader override and its filesystem include context to a shader-capable platform.
++    /// </summary>
++    [Fact]
++    public void Cook_whenPlatformBuilderSupportsShaderArtifacts_prefersAuthoredSourceAndPreservesNestedIncludeContext() {
++        const string scenePath = "Scenes/VitaShaderBundle.helen";
++        const string materialPath = "Materials/VitaShaderBundle.hasset";
++        string authoredPath = Path.Combine(ProjectRootPath, "assets", "ForwardStandardShader.hlsl");
++        string commonIncludePath = Path.Combine(ProjectRootPath, "assets", "inc", "common.hlsli");
++        string nestedIncludePath = Path.Combine(ProjectRootPath, "assets", "inc", "math", "value.hlsli");
++        string wrongFallbackPath = Path.Combine(ProjectRootPath, "math", "value.hlsli");
++        Directory.CreateDirectory(Path.GetDirectoryName(authoredPath)!);
++        Directory.CreateDirectory(Path.GetDirectoryName(commonIncludePath)!);
++        Directory.CreateDirectory(Path.GetDirectoryName(nestedIncludePath)!);
++        Directory.CreateDirectory(Path.GetDirectoryName(wrongFallbackPath)!);
++        File.WriteAllText(authoredPath, "#include \"inc/common.hlsli\"\n");
++        File.WriteAllText(commonIncludePath, "#include \"math/value.hlsli\"\n");
++        File.WriteAllText(nestedIncludePath, "float4 NestedValue() { return float4(1, 2, 3, 4); }\n");
++        File.WriteAllText(wrongFallbackPath, "float4 WrongFallback() { return 0; }\n");
++        WriteMaterialAsset(materialPath, "VitaShaderBundle");
++        WriteSceneAssetWithMaterial(scenePath, materialPath);
++        ShaderArtifactTestPlatformMaterialAssetBuilder builder = new();
++        EditorPlatformAssetCookService service = new(
++            ProjectRootPath,
++            "1.0.0-engine",
++            "game",
++            "1.0.0",
++            Array.Empty<IAssetImporterRegistration>(),
++            PackagedFontAssetFactory.Create(),
++            null,
++            null,
++            BuiltInShaderAssetLibrary);
++
++        PlatformBuildManifest manifest = service.Cook(
++            builder.Definition,
++            ["VitaShaderBundle"],
++            BuildRootPath,
++            ["psvita"],
++            builder,
++            "debug",
++            "gxm");
++
++        PlatformShaderArtifactCookRequest request = Assert.IsType<PlatformShaderArtifactCookRequest>(builder.LastShaderArtifactCookRequest);
++        PlatformShaderArtifactCookSource source = Assert.Single(request.ShaderSources);
++        string expectedAuthoredPath = Path.GetFullPath(authoredPath);
++        string builtInPath = Path.GetFullPath(BuiltInShaderAssetLibrary.ResolveShaderPath("ForwardStandardShader.hlsl"));
++        Assert.Equal("ForwardStandardShader", source.ShaderAssetId);
++        Assert.True(source.HasSourcePath);
++        Assert.Equal(expectedAuthoredPath, source.SourcePath);
++        Assert.NotEqual(builtInPath, source.SourcePath);
++        Assert.Equal(File.ReadAllText(authoredPath), source.SourceText);
++        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(authoredPath))), source.SourceHash);
++
++        ShaderFilesystemIncludeResolver resolver = new(ProjectRootPath);
++        ShaderIncludeResult common = resolver.Resolve(source.SourcePath, "inc/common.hlsli");
++        ShaderIncludeResult nested = resolver.Resolve(common.Path, "math/value.hlsli");
++        Assert.Equal(Path.GetFullPath(Path.Combine(ProjectRootPath, "assets", "inc", "math", "value.hlsli")), Path.GetFullPath(nested.Path));
++        Assert.Contains("NestedValue", nested.Source);
++        Assert.DoesNotContain("WrongFallback", nested.Source);
++        Assert.Throws<FileNotFoundException>(() => resolver.Resolve(common.Path, "missing.hlsli"));
+         Assert.Contains(manifest.CookedArtifacts, artifact => artifact.RelativePath == "cooked/shaders/psvita/shaders.psvb" && artifact.ArtifactKind == "shader");
+     }
+ 
+     /// <summary>
+     /// Verifies imported cooked texture assets stay classified as generic assets instead of models.
+     /// </summary>
+     [Fact]
+     public void ResolveArtifactKind_when_imported_cooked_texture_is_supplied_returns_asset() {
+         string importedTexturePath = Path.Combine(BuildRootPath, "cooked", "imported", "0123456789ABCDEF0123456789ABCDEF.hasset");
+         Directory.CreateDirectory(Path.GetDirectoryName(importedTexturePath)!);
+diff --git a/engine/helengine.editor/managers/project/EditorPlatformAssetCookService.cs b/engine/helengine.editor/managers/project/EditorPlatformAssetCookService.cs
+index b2f65fea..1cc6b18e 100644
+--- a/engine/helengine.editor/managers/project/EditorPlatformAssetCookService.cs
++++ b/engine/helengine.editor/managers/project/EditorPlatformAssetCookService.cs
+@@ -188,21 +188,22 @@ namespace helengine.editor {
+                 .Select(dependency => dependency.ShaderAssetId)
+                 .Distinct(StringComparer.Ordinal)
+                 .ToArray();
+             IReadOnlyList<EditorProjectShaderSource> resolvedSources = sourceResolver.Resolve(referencedShaderAssetIds);
+             PlatformShaderArtifactCookSource[] shaderSources = new PlatformShaderArtifactCookSource[resolvedSources.Count];
+             for (int index = 0; index < resolvedSources.Count; index++) {
+                 EditorProjectShaderSource resolvedSource = resolvedSources[index];
+                 shaderSources[index] = new PlatformShaderArtifactCookSource(
+                     resolvedSource.ShaderAssetId,
+                     resolvedSource.SourceHash,
+-                    resolvedSource.SourceText);
++                    resolvedSource.SourceText,
++                    resolvedSource.SourcePath);
+             }
+ 
+             PlatformShaderArtifactCookRequest shaderRequest = new PlatformShaderArtifactCookRequest(
+                 cookRootPath,
+                 ResolvePlatformName(platformDefinition, materialBuilder),
+                 selectedBuildProfileId,
+                 selectedGraphicsProfileId,
+                 packagerResult.ReferencedShaderDependencies,
+                 shaderSources);
+             PlatformShaderArtifactCookResult shaderResult = shaderArtifactBuilder.CookShaderArtifacts(shaderRequest)
+

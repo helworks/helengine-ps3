@@ -5,12 +5,18 @@
     <Nullable>disable</Nullable>
     <OutputType>Exe</OutputType>
     <UseAppHost>false</UseAppHost>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>helengine.ps3.builder</AssemblyName>
     <RootNamespace>helengine.ps3.builder</RootNamespace>
     <HelengineRoot Condition="'$(HelengineRoot)' == '' and '$(HELENGINE_ROOT)' != ''">$(HELENGINE_ROOT)</HelengineRoot>
     <HelengineRoot Condition="'$(HelengineRoot)' == ''">$(MSBuildThisFileDirectory)..\..\helengine</HelengineRoot>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Silk.NET.Shaderc" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Shaderc.Native" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.SPIRV.Cross" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.SPIRV.Cross.Native" Version="2.21.0" />
+    <ProjectReference Include="$(HelengineRoot)\engine\helengine.shader.compilation\helengine.shader.compilation.csproj" />
     <ProjectReference Include="$(HelengineRoot)\engine\helengine.baseplatform\helengine.baseplatform.csproj" />
     <ProjectReference Include="$(HelengineRoot)\engine\helengine.core\helengine.core.csproj" />
     <ProjectReference Include="$(HelengineRoot)\engine\helengine.files\helengine.files.csproj" />

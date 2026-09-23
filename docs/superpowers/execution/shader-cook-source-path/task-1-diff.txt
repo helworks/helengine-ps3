@@ -1,0 +1,186 @@
+warning: in the working copy of 'engine/helengine.baseplatform/Requests/PlatformShaderArtifactCookSource.cs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/engine/helengine.baseplatform/Requests/PlatformShaderArtifactCookSource.cs b/engine/helengine.baseplatform/Requests/PlatformShaderArtifactCookSource.cs
+index 75aaff65..5ab723c7 100644
+--- a/engine/helengine.baseplatform/Requests/PlatformShaderArtifactCookSource.cs
++++ b/engine/helengine.baseplatform/Requests/PlatformShaderArtifactCookSource.cs
+@@ -1,10 +1,12 @@
++using System.IO;
++
+ namespace helengine.baseplatform.Requests {
+ 
+     /// <summary>
+     /// Supplies the resolved authored source and stable identity for one shader asset requested by a platform shader cook operation.
+     /// </summary>
+     public sealed class PlatformShaderArtifactCookSource {
+         /// <summary>
+         /// Stores the stable shader asset identifier.
+         /// </summary>
+         readonly string ShaderAssetIdValue;
+@@ -12,46 +14,79 @@ namespace helengine.baseplatform.Requests {
+         /// <summary>
+         /// Stores the SHA-256 identity of the authored source bytes.
+         /// </summary>
+         readonly string SourceHashValue;
+ 
+         /// <summary>
+         /// Stores the complete authored HLSL source text.
+         /// </summary>
+         readonly string SourceTextValue;
+ 
++        /// <summary>
++        /// Stores the fully qualified host-side path for the authored HLSL source, or null for legacy source-only callers.
++        /// </summary>
++        readonly string SourcePathValue;
++
+         /// <summary>
+         /// Initializes one resolved shader source for a platform shader cook operation.
+         /// </summary>
+         /// <param name="shaderAssetId">Stable shader asset identifier referenced by material dependencies.</param>
+         /// <param name="sourceHash">SHA-256 identity of the authored source bytes.</param>
+         /// <param name="sourceText">Complete authored HLSL source text.</param>
+         public PlatformShaderArtifactCookSource(string shaderAssetId, string sourceHash, string sourceText) {
+             if (string.IsNullOrWhiteSpace(shaderAssetId)) {
+                 throw new ArgumentException("Shader asset id is required.", nameof(shaderAssetId));
+             } else if (string.IsNullOrWhiteSpace(sourceHash)) {
+                 throw new ArgumentException("Shader source hash is required.", nameof(sourceHash));
+             } else if (sourceText == null) {
+                 throw new ArgumentNullException(nameof(sourceText));
+             }
+ 
+             ShaderAssetIdValue = shaderAssetId;
+             SourceHashValue = sourceHash;
+             SourceTextValue = sourceText;
+         }
+ 
++        /// <summary>
++        /// Initializes one resolved shader source and its fully qualified host-side source path for a platform shader cook operation.
++        /// </summary>
++        /// <param name="shaderAssetId">Stable shader asset identifier referenced by material dependencies.</param>
++        /// <param name="sourceHash">SHA-256 identity of the authored source bytes.</param>
++        /// <param name="sourceText">Complete authored HLSL source text snapshot.</param>
++        /// <param name="sourcePath">Fully qualified path for the authored HLSL source.</param>
++        public PlatformShaderArtifactCookSource(string shaderAssetId, string sourceHash, string sourceText, string sourcePath)
++            : this(shaderAssetId, sourceHash, sourceText) {
++            if (string.IsNullOrWhiteSpace(sourcePath)) {
++                throw new ArgumentException("Shader source path is required.", nameof(sourcePath));
++            } else if (!Path.IsPathFullyQualified(sourcePath)) {
++                throw new ArgumentException("Shader source path must be fully qualified.", nameof(sourcePath));
++            }
++
++            SourcePathValue = Path.GetFullPath(sourcePath);
++        }
++
+         /// <summary>
+         /// Gets the stable shader asset identifier.
+         /// </summary>
+         public string ShaderAssetId => ShaderAssetIdValue;
+ 
+         /// <summary>
+         /// Gets the SHA-256 identity of the authored source bytes.
+         /// </summary>
+         public string SourceHash => SourceHashValue;
+ 
+         /// <summary>
+         /// Gets the complete authored HLSL source text.
+         /// </summary>
+         public string SourceText => SourceTextValue;
++
++        /// <summary>
++        /// Gets the fully qualified authored source path, or null when the legacy source-only constructor was used.
++        /// </summary>
++        public string SourcePath => SourcePathValue;
++
++        /// <summary>
++        /// Gets whether a fully qualified authored source path was supplied.
++        /// </summary>
++        public bool HasSourcePath => SourcePathValue != null;
+     }
+ }
+warning: in the working copy of 'engine/helengine.baseplatform.tests/Requests/PlatformShaderArtifactCookSourceTests.cs', LF will be replaced by CRLF the next time Git touches it
+diff --git a/engine/helengine.baseplatform.tests/Requests/PlatformShaderArtifactCookSourceTests.cs b/engine/helengine.baseplatform.tests/Requests/PlatformShaderArtifactCookSourceTests.cs
+new file mode 100644
+index 00000000..264a16f1
+--- /dev/null
++++ b/engine/helengine.baseplatform.tests/Requests/PlatformShaderArtifactCookSourceTests.cs
+@@ -0,0 +1,80 @@
++using System;
++using System.IO;
++using helengine.baseplatform.Requests;
++using Xunit;
++
++namespace helengine.baseplatform.tests.Requests;
++
++/// <summary>
++/// Verifies resolved shader source snapshots retain optional host-side source path provenance.
++/// </summary>
++public sealed class PlatformShaderArtifactCookSourceTests {
++    /// <summary>
++    /// Ensures the original source-only constructor retains its values and represents path absence explicitly.
++    /// </summary>
++    [Fact]
++    public void LegacyConstructor_whenSourceIsProvided_preservesSnapshotWithoutSourcePath() {
++        PlatformShaderArtifactCookSource source = new("asset", "supplied-hash", "source snapshot");
++
++        Assert.Equal("asset", source.ShaderAssetId);
++        Assert.Equal("supplied-hash", source.SourceHash);
++        Assert.Equal("source snapshot", source.SourceText);
++        Assert.False(source.HasSourcePath);
++        Assert.Null(source.SourcePath);
++    }
++
++    /// <summary>
++    /// Ensures a fully qualified metadata-only path is retained without reading or requiring the source file.
++    /// </summary>
++    [Fact]
++    public void PathConstructor_whenSourcePathIsFullyQualified_preservesSnapshotAndPath() {
++        string path = Path.GetFullPath(Path.Combine("shader-source-tests", "shaders with spaces", "ação.hlsl"));
++        PlatformShaderArtifactCookSource source = new("asset", "supplied-hash", "source snapshot", path);
++
++        Assert.True(Path.IsPathFullyQualified(path));
++        Assert.False(File.Exists(path));
++        Assert.True(source.HasSourcePath);
++        Assert.Equal(path, source.SourcePath);
++        Assert.Equal("supplied-hash", source.SourceHash);
++        Assert.Equal("source snapshot", source.SourceText);
++    }
++
++    /// <summary>
++    /// Ensures null, empty, whitespace, and relative paths cannot be used as source path provenance.
++    /// </summary>
++    [Theory]
++    [InlineData(null)]
++    [InlineData("")]
++    [InlineData("   ")]
++    [InlineData("relative/main.hlsl")]
++    public void PathConstructor_whenSourcePathIsMissingOrRelative_throwsArgumentException(string sourcePath) {
++        Assert.Throws<ArgumentException>(() => new PlatformShaderArtifactCookSource("asset", "hash", "text", sourcePath));
++    }
++
++    /// <summary>
++    /// Ensures Windows drive-relative and rooted-without-drive paths are rejected as not fully qualified.
++    /// </summary>
++    [Fact]
++    public void PathConstructor_whenWindowsPathIsNotFullyQualified_throwsArgumentException() {
++        if (!OperatingSystem.IsWindows()) {
++            return;
++        }
++
++        Assert.Throws<ArgumentException>(() => new PlatformShaderArtifactCookSource("asset", "hash", "text", "C:main.hlsl"));
++        Assert.Throws<ArgumentException>(() => new PlatformShaderArtifactCookSource("asset", "hash", "text", "\\main.hlsl"));
++    }
++
++    /// <summary>
++    /// Ensures required shader identity and source snapshot validation remains unchanged for both constructors.
++    /// </summary>
++    [Fact]
++    public void Constructors_whenRequiredIdentityOrSourceTextIsInvalid_preserveExistingExceptions() {
++        Assert.Throws<ArgumentException>(() => new PlatformShaderArtifactCookSource(" ", "hash", "text"));
++        Assert.Throws<ArgumentException>(() => new PlatformShaderArtifactCookSource("asset", " ", "text"));
++        Assert.Throws<ArgumentNullException>(() => new PlatformShaderArtifactCookSource("asset", "hash", null));
++
++        Assert.Throws<ArgumentException>(() => new PlatformShaderArtifactCookSource(" ", "hash", "text", Path.GetFullPath("source.hlsl")));
++        Assert.Throws<ArgumentException>(() => new PlatformShaderArtifactCookSource("asset", " ", "text", Path.GetFullPath("source.hlsl")));
++        Assert.Throws<ArgumentNullException>(() => new PlatformShaderArtifactCookSource("asset", "hash", null, Path.GetFullPath("source.hlsl")));
++    }
++}
+
