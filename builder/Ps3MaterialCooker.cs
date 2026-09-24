@@ -8,16 +8,18 @@ namespace helengine.ps3.builder;
 ///
 /// <remarks>
 /// The schema is deliberately permissive about surface state. Translucent base colors and
-/// double-sided materials are recorded faithfully rather than refused, because the cooked
-/// asset can represent both and refusing them would reject authored content the platform
-/// will render once the scene milestone lands. Texture bindings are the exception: the
-/// PlayStation 3 build stages no textures yet, so accepting one would write a path that
-/// resolves to nothing on the console.
+/// double-sided and vertex-color choices are recorded faithfully in the P3MT envelope.
+/// The standard packager supplies canonical cooked texture paths, which this envelope
+/// preserves after relative-path validation. Native material loading and rendering still
+/// require a later integration step before this producer can be treated as runtime acceptance.
 /// </remarks>
 public sealed class Ps3MaterialCooker {
-    /// <summary>Cooks one authored material into the platform-owned payload the PlayStation 3 renderer reads.</summary>
+    /// <summary>Field key for the general editor's optional custom-shader selection.</summary>
+    const string UseCustomShaderFieldId = "use-custom-shader";
+
+    /// <summary>Cooks one standard-schema material into the bounded P3MT payload and shader dependency.</summary>
     /// <param name="request">Material schema request supplied by the generic build graph.</param>
-    /// <returns>Serialized platform material bytes with no shader dependencies.</returns>
+    /// <returns>Versioned PS3 material bytes and the exact standard shader pair they reference.</returns>
     /// <exception cref="ArgumentNullException">Thrown when the request is missing.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the request targets another platform, schema or graphics profile, or authors state the platform cannot represent.</exception>
     public PlatformMaterialCookResult Cook(PlatformMaterialCookRequest request) {
@@ -32,19 +34,20 @@ public sealed class Ps3MaterialCooker {
             throw new InvalidOperationException($"PlayStation 3 material requires graphics profile '{Ps3MaterialSchemaIds.StandardGraphicsProfileId}', received '{request.SelectedGraphicsProfileId}'.");
         }
 
-        // Every field falls back to the schema default declared by the platform definition.
-        // A project material that carries only the engine's common fields still cooks, which
-        // matters because no authored material selects the PlayStation 3 schema explicitly yet.
+        // Every schema field falls back to its platform definition default. The editor may
+        // additionally send general material fields; this PS3 schema ignores its unrelated
+        // Mesh variant handoff and owns the fixed ForwardStandard shader pair.
         IReadOnlyDictionary<string, string> fields = request.FieldValues;
         string baseColorValue = Resolve(fields, Ps3MaterialSchemaIds.BaseColorFieldId, "#FFFFFFFF");
-        string texturePath = Resolve(fields, Ps3MaterialSchemaIds.TextureRelativePathFieldId, string.Empty);
+        string texturePath = ResolveTexturePath(fields);
         string lightingMode = Resolve(fields, Ps3MaterialSchemaIds.LightingModeFieldId, Ps3MaterialSchemaIds.LightingUnlitValue);
         string doubleSidedMode = Resolve(fields, Ps3MaterialSchemaIds.DoubleSidedFieldId, "false");
         string vertexColorMode = Resolve(fields, Ps3MaterialSchemaIds.VertexColorModeFieldId, Ps3MaterialSchemaIds.VertexColorIgnoreValue);
 
-        if (!string.IsNullOrWhiteSpace(texturePath)) {
+        string customShaderValue = Resolve(fields, UseCustomShaderFieldId, string.Empty);
+        if (!string.IsNullOrEmpty(customShaderValue) && ParseBoolean(customShaderValue, UseCustomShaderFieldId)) {
             throw new InvalidOperationException(
-                $"PlayStation 3 {Ps3MaterialSchemaIds.StandardSchemaId} does not support texture bindings. The build stages no textures, so a bound texture would resolve to nothing on the console.");
+                $"PlayStation 3 {Ps3MaterialSchemaIds.StandardSchemaId} does not support custom shader selection. Use the PS3 standard material schema and its ForwardStandard shader pair.");
         }
 
         bool lit = ParseChoice(
@@ -60,20 +63,24 @@ public sealed class Ps3MaterialCooker {
         bool doubleSided = ParseBoolean(doubleSidedMode, Ps3MaterialSchemaIds.DoubleSidedFieldId);
         ParseColor(baseColorValue, out byte red, out byte green, out byte blue, out byte alpha);
 
-        helengine.PlatformMaterialAsset cookedAsset = new() {
-            Id = request.MaterialAssetId,
-            RendererFamilyId = Ps3MaterialSchemaIds.StandardGraphicsProfileId,
-            TextureRelativePath = string.Empty,
-            DoubleSided = doubleSided,
-            UseVertexColor = useVertexColor,
-            Lit = lit,
-            BaseColorR = red,
-            BaseColorG = green,
-            BaseColorB = blue,
-            BaseColorA = alpha
-        };
+        Ps3ShaderArtifactIdentity shaderIdentity = Ps3MaterialArtifactWriter.CreateShaderIdentity();
+        byte[] payload = Ps3MaterialArtifactWriter.Write(
+            request.MaterialAssetId,
+            red,
+            green,
+            blue,
+            alpha,
+            lit,
+            doubleSided,
+            useVertexColor,
+            texturePath);
+        PlatformShaderDependency dependency = new(
+            shaderIdentity.ShaderAssetId,
+            shaderIdentity.VertexProgramName,
+            shaderIdentity.PixelProgramName,
+            shaderIdentity.VariantName);
 
-        return new PlatformMaterialCookResult(helengine.files.AssetSerializer.SerializeToBytes(cookedAsset), []);
+        return new PlatformMaterialCookResult(payload, [dependency]);
     }
 
     /// <summary>Returns an optional schema field, substituting the schema default when it is absent.</summary>
@@ -90,6 +97,20 @@ public sealed class Ps3MaterialCooker {
         }
 
         return value.Trim();
+    }
+
+    /// <summary>Returns the supplied texture field unchanged, defaulting only when the field is absent.</summary>
+    /// <param name="fields">Authored field map.</param>
+    /// <returns>Exact supplied value, or empty when the field is absent.</returns>
+    static string ResolveTexturePath(IReadOnlyDictionary<string, string> fields) {
+        string value;
+        if (fields == null) {
+            throw new ArgumentNullException(nameof(fields));
+        } else if (!fields.TryGetValue(Ps3MaterialSchemaIds.TextureRelativePathFieldId, out value)) {
+            return string.Empty;
+        }
+
+        return value;
     }
 
     /// <summary>Parses one authored two-way choice field.</summary>
