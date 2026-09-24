@@ -17,12 +17,14 @@
 
     Command contract:
         powershell -NoProfile -File scripts/register-platform.ps1
+        powershell -NoProfile -File scripts/register-platform.ps1 -BuilderAssemblyPath 'C:\build output\helengine.ps3.builder.dll'
 #>
 [CmdletBinding()]
 param(
     [string]$ProjectFile = 'C:\dev\helprojs\demodisc\project.heproj',
     [Alias('ExternalRoot')][string]$StateRoot = '',
-    [ValidateSet('Release', 'Debug')][string]$Configuration = 'Release'
+    [ValidateSet('Release', 'Debug')][string]$Configuration = 'Release',
+    [string]$BuilderAssemblyPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,6 +32,18 @@ Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+
+if ([string]::IsNullOrWhiteSpace($BuilderAssemblyPath)) {
+    $builderAssembly = Join-Path $repoRoot "builder\bin\$Configuration\net9.0\helengine.ps3.builder.dll"
+} else {
+    # Windows PowerShell 5/.NET Framework may not provide IsPathFullyQualified.
+    # Reject drive-relative and root-relative paths instead of resolving them via cwd.
+    if ($BuilderAssemblyPath -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/])') {
+        throw 'BuilderAssemblyPath must be fully qualified.'
+    }
+    $builderAssembly = [IO.Path]::GetFullPath($BuilderAssemblyPath)
+}
+
 $StateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
 $settingsRoot = Join-Path $StateRoot 'user-settings'
 $manifestPath = Join-Path $settingsRoot 'platforms.json'
@@ -37,7 +51,6 @@ $manifestPath = Join-Path $settingsRoot 'platforms.json'
 # somewhere known and can be compiled directly by scripts/build.ps1 -Mode Core without
 # hunting through build caches for it.
 $generatedCoreRoot = Join-Path $StateRoot 'generated-core'
-$builderAssembly = Join-Path $repoRoot "builder\bin\$Configuration\net9.0\helengine.ps3.builder.dll"
 $pluginManifest = Join-Path $repoRoot 'platform-plugin.json'
 
 # --- Inputs -------------------------------------------------------------------------
