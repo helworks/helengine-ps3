@@ -1,6 +1,8 @@
 # Shared internal 2D batch and PS3 cube_test rendering
 
-Status: proposed design for user review; no implementation authorized by this document alone.
+Status: design and both implementation plans approved by the user on 2026-09-24.
+Shared shader implementation is in progress; native integration remains gated on
+the measured compiler and generated-ABI results.
 
 ## Intent and approved boundaries
 
@@ -13,8 +15,10 @@ implements after review. No worktrees, generated-output edits or screenshots.
 
 ## Source-backed starting point
 
-Codebase-memory list_projects currently fails with Transport closed. These findings
-come from targeted source reads, not a complete graph or cross-platform audit.
+At design time, codebase-memory list_projects failed with Transport closed. The
+service responded during implementation preflight; its shared index is dated
+2026-09-23 and relevant paths report changed metadata or excluded subtrees. These
+findings are checked against current source, not a complete cross-platform audit.
 
 - Core RenderManager2D already exposes sprite, text, rounded-rectangle and texture
   creation/update/release operations. Keep these public contracts.
