@@ -24,7 +24,7 @@ constexpr const char* MaterialFixturePath = "/app_home/USRDIR/content/material.p
 constexpr std::size_t MaximumMaterialBytes = 1024u * 1024u;
 
 /// <summary>Expected fixed ForwardStandard P3SP path from the committed identity contract.</summary>
-constexpr const char* ExpectedShaderRelativePath = "shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp";
+constexpr const char* ExpectedShaderRelativePath = "cooked/shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp";
 
 /// <summary>Names the location and size of one length-prefixed field in a fixture copy.</summary>
 struct StringFieldSpan {
@@ -492,7 +492,11 @@ int RunTests() {
     }, passed, failed);
     RunCase("rejects_syntactically_valid_foreign_shader_path", [&] {
         ExpectRejected(ReplaceStringField(materialBytes, 6u,
-            BytesOf(std::string("shaders/") + std::string(64u, 'a') + ".ps3sp")), "shader relative path");
+            BytesOf(std::string("cooked/shaders/") + std::string(64u, 'a') + ".ps3sp")), "shader relative path");
+    }, passed, failed);
+    RunCase("rejects_legacy_cook_relative_shader_path", [&] {
+        ExpectRejected(ReplaceStringField(materialBytes, 6u,
+            BytesOf(std::string(ExpectedShaderRelativePath).substr(7u))), "shader relative path");
     }, passed, failed);
     RunCase("rejects_unknown_surface_flag_bit", [&] {
         std::vector<std::uint8_t> bytes = materialBytes;
@@ -575,7 +579,7 @@ int RunTests() {
     }, passed, failed);
     RunCase("matcher_rejects_changed_material_path", [&] {
         helengine::ps3::Ps3CookedMaterial changed = fixtureMaterial;
-        changed.ShaderRelativePath = std::string("shaders/") + std::string(64u, 'a') + ".ps3sp";
+        changed.ShaderRelativePath = std::string("cooked/shaders/") + std::string(64u, 'a') + ".ps3sp";
         ExpectMaterialContractRejected(changed, fixtureProgram, "shader relative path");
     }, passed, failed);
 

@@ -34,7 +34,7 @@ constexpr const char* StandardVariantName = "ForwardStandard";
 
 /// <summary>Canonical lookup path for the fixed ForwardStandard identity tuple.</summary>
 constexpr const char* StandardShaderRelativePath =
-    "shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp";
+    "cooked/shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp";
 
 /// <summary>Requires an identity field to equal its one supported version-one value.</summary>
 /// <param name="actual">Decoded or caller-owned identity field.</param>

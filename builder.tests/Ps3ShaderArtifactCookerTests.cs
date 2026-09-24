@@ -55,8 +55,13 @@ public sealed class Ps3ShaderArtifactCookerTests {
         Assert.All(backend.Requests, compileRequest => Assert.Equal("snapshot source", compileRequest.Source.Source));
         Assert.Single(workingRoots);
         Assert.Equal(Path.Combine(request.CookRootPath, ".ps3-shader-work"), workingRoots[0]);
-        Assert.Equal("shaders", declaration.RelativePath.Split('/')[0]);
-        Assert.True(File.Exists(Path.Combine(request.CookRootPath, declaration.RelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Ps3ShaderArtifactIdentity identity = new("asset-a", "Vertex", "Pixel", "default");
+        Assert.StartsWith("shaders/", identity.RelativePath);
+        Assert.Equal("cooked/" + identity.RelativePath, identity.RuntimeRelativePath);
+        Assert.Equal("cooked/" + identity.RelativePath, declaration.RelativePath);
+        Assert.Equal(identity.RelativePath, declaration.LogicalArtifactId);
+        Assert.True(File.Exists(Path.Combine(request.CookRootPath, identity.RelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(Directory.Exists(Path.Combine(request.CookRootPath, "cooked")));
     }
 
     /// <summary>Checks distinct asset identities and program pairs sharing a variant never overwrite one another.</summary>
@@ -476,7 +481,7 @@ public sealed class Ps3ShaderArtifactCookerTests {
         Assert.Equal(2, stageBlobs.Count);
         Assert.Equal(new byte[] { 0x51, 0x53, 0x33 }, stageBlobs[0]);
         Assert.Equal(new byte[] { 0x51, 0x53, 0x33 }, stageBlobs[1]);
-        Assert.Equal(identity.RelativePath, first.CookedArtifactDeclarations[0].RelativePath);
+        Assert.Equal("cooked/" + identity.RelativePath, first.CookedArtifactDeclarations[0].RelativePath);
         Assert.Equal(identity.RelativePath, first.CookedArtifactDeclarations[0].LogicalArtifactId);
         Assert.Equal("shader", first.CookedArtifactDeclarations[0].ArtifactKind);
         Assert.Equal("default", first.CookedArtifactDeclarations[0].VariantId);
@@ -511,14 +516,15 @@ public sealed class Ps3ShaderArtifactCookerTests {
         PlatformShaderArtifactCookResult first = Cook(cooker, request);
         Dictionary<string, byte[]> firstBytes = first.CookedArtifactDeclarations.ToDictionary(
             declaration => declaration.RelativePath,
-            declaration => File.ReadAllBytes(ArtifactPath(request, declaration.RelativePath)));
+            declaration => File.ReadAllBytes(ArtifactPath(request, declaration.LogicalArtifactId)));
         PlatformShaderArtifactCookResult second = Cook(cooker, request);
 
         Assert.Equal(2, first.CookedArtifactDeclarations.Count);
         Assert.Equal(first.CookedArtifactDeclarations.Select(item => item.RelativePath).OrderBy(path => path, StringComparer.Ordinal),
             second.CookedArtifactDeclarations.Select(item => item.RelativePath).OrderBy(path => path, StringComparer.Ordinal));
         foreach (PlatformCookedArtifactDeclaration declaration in second.CookedArtifactDeclarations) {
-            byte[] bytes = File.ReadAllBytes(ArtifactPath(request, declaration.RelativePath));
+            Assert.Equal("cooked/" + declaration.LogicalArtifactId, declaration.RelativePath);
+            byte[] bytes = File.ReadAllBytes(ArtifactPath(request, declaration.LogicalArtifactId));
             Assert.Equal(firstBytes[declaration.RelativePath], bytes);
             Assert.Equal(new[] { declaration.LogicalArtifactId == new Ps3ShaderArtifactIdentity("docker-asset-one", "Vertex", "Pixel", "default").RelativePath
                     ? "docker-asset-one" : "docker-asset-two", "Vertex", "Pixel", "default", sourceHash }, ReadIdentityText(bytes));
@@ -660,9 +666,9 @@ public sealed class Ps3ShaderArtifactCookerTests {
     static string ArtifactPath(PlatformShaderArtifactCookRequest request, Ps3ShaderArtifactIdentity identity) =>
         ArtifactPath(request, identity.RelativePath);
 
-    /// <summary>Builds the final artifact path from a declaration's normalized relative path.</summary>
+    /// <summary>Builds the physical artifact path from its stable cook-root-relative identity.</summary>
     /// <param name="request">Cook operation that owns the output root.</param>
-    /// <param name="relativePath">Runtime-relative artifact path.</param>
+    /// <param name="relativePath">Cook-root-relative artifact identity path.</param>
     /// <returns>Absolute final artifact path.</returns>
     static string ArtifactPath(PlatformShaderArtifactCookRequest request, string relativePath) =>
         Path.Combine(request.CookRootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));

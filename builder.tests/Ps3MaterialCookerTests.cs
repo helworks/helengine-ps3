@@ -85,7 +85,7 @@ public sealed class Ps3MaterialCookerTests {
             dependency.VertexProgramName,
             dependency.PixelProgramName,
             dependency.VariantName);
-        Assert.Equal(cooked.ShaderRelativePath, recomputedIdentity.RelativePath);
+        Assert.Equal("cooked/" + recomputedIdentity.RelativePath, cooked.ShaderRelativePath);
         Assert.Equal("ForwardStandardShader", dependency.ShaderAssetId);
         Assert.Equal("ForwardStandardShader.vs", dependency.VertexProgramName);
         Assert.Equal("ForwardStandardShader.ps", dependency.PixelProgramName);

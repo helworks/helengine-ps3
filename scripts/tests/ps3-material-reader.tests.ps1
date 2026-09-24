@@ -29,7 +29,7 @@ $launchName = 'ps3_material_reader_tests.self'
 $artifactNames = @('ps3_material_reader_tests.elf', $launchName, 'ps3_material_reader_tests.fake.self')
 $fixtureNames = @(
     'material.p3mt',
-    'shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp'
+    'cooked/shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp'
 )
 
 function Get-Sha256 {

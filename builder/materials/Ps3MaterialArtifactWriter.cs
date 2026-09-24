@@ -74,7 +74,7 @@ public static class Ps3MaterialArtifactWriter {
         byte[] vertexProgramNameBytes = EncodeRequiredText(shaderIdentity.VertexProgramName, nameof(shaderIdentity.VertexProgramName));
         byte[] pixelProgramNameBytes = EncodeRequiredText(shaderIdentity.PixelProgramName, nameof(shaderIdentity.PixelProgramName));
         byte[] variantNameBytes = EncodeRequiredText(shaderIdentity.VariantName, nameof(shaderIdentity.VariantName));
-        byte[] shaderRelativePathBytes = EncodeRequiredText(shaderIdentity.RelativePath, nameof(shaderIdentity.RelativePath));
+        byte[] shaderRelativePathBytes = EncodeRequiredText(shaderIdentity.RuntimeRelativePath, nameof(shaderIdentity.RuntimeRelativePath));
         byte[] textureRelativePathBytes = EncodeTexturePath(diffuseTextureRelativePath);
         byte[][] encodedStrings = [
             materialAssetIdBytes,

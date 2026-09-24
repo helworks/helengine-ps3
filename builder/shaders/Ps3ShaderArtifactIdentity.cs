@@ -31,8 +31,11 @@ public sealed class Ps3ShaderArtifactIdentity {
     /// <summary>Gets the authored variant name used in the artifact body and path key.</summary>
     public string VariantName { get; }
 
-    /// <summary>Gets the lowercase SHA-256 lookup path for this identity.</summary>
+    /// <summary>Gets the stable lowercase SHA-256 path relative to the physical cook root.</summary>
     public string RelativePath { get; }
+
+    /// <summary>Gets the packaged content-source path used by declarations and material references.</summary>
+    public string RuntimeRelativePath => "cooked/" + RelativePath;
 
     /// <summary>Validates required text using the artifact's strict UTF-8 and bounded string rules.</summary>
     /// <param name="value">Text to validate.</param>

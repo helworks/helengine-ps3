@@ -2,7 +2,7 @@
 
 The PlayStation 3 standard material cooker writes a PS3-owned `P3MT` version 1 envelope. It carries the material identifier, the fixed standard shader pair identity, authored base color and surface choices, and an optional cooked diffuse texture path. The cooker also reports one shader dependency with the same four identity strings serialized in the envelope.
 
-This is an intermediate producer contract. The native material loader and renderer have not yet accepted this format, so it does not enable the PS3 shader feature or establish runtime support.
+The native reader validates this envelope; full scene rendering acceptance remains separate and the PS3 shader feature stays disabled.
 
 ## Wire format
 
@@ -19,12 +19,22 @@ All integers are unsigned 32-bit big-endian values. Strings are a U32 UTF-8 byte
 | 7 | VertexProgramName | String: `ForwardStandardShader.vs` |
 | 8 | PixelProgramName | String: `ForwardStandardShader.ps` |
 | 9 | VariantName | String: `ForwardStandard` |
-| 10 | ShaderRelativePath | String: path from `Ps3ShaderArtifactIdentity.RelativePath` for fields 6–9 |
+| 10 | ShaderRelativePath | String: packaged path from `Ps3ShaderArtifactIdentity.RuntimeRelativePath` for fields 6–9 |
 | 11 | BaseColor | Four raw bytes in R, G, B, A order |
 | 12 | SurfaceFlags | U32: bit 0 is Lit, bit 1 is DoubleSided, bit 2 is UseVertexColor; all other bits are zero |
 | 13 | DiffuseTextureRelativePath | String: validated content-relative path, or a zero-byte empty string |
 
 The identity path is the lowercase SHA-256 lookup path derived by `Ps3ShaderArtifactIdentity` from the exact four identity strings using length-prefixed UTF-8 components. The material dependency and payload use those same values. Compiler source hashes and toolchain identity are not part of material lookup identity.
+
+There are two explicit path domains. RelativePath remains shaders/<identity-hash>.ps3sp
+relative to CookRootPath and remains the declaration's LogicalArtifactId.
+RuntimeRelativePath is cooked/ + RelativePath. Declaration RelativePath and the
+P3MT reference use that runtime path, matching normal packaged content lookup.
+The physical shader still goes to CookRootPath/shaders; neither identity hashes nor
+P3SP/SDK bytes change. The fixed standard runtime reference is
+cooked/shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp.
+All materials must be recooked; the old unprefixed reference is rejected, without
+cache rewriting or compatibility fallback.
 
 ## Bounds and validation
 
@@ -40,4 +50,8 @@ The cooker retains the current schema defaults: `#FFFFFFFF` base color, empty te
 
 ## Native migration boundary
 
-The native reader must decode this exact field order and retain every surface flag. It must verify the P3MT shader identity and hash-derived path against the referenced P3SP artifact, resolve content through `IContentStreamSource`, and report required texture or shader load failures without fallback. Until native material loading and rendering implement those requirements and pass their acceptance gates, this artifact format remains producer-only and shaders stay disabled.
+The native reader decodes this field order and retains every surface flag. It verifies
+the fixed P3MT shader identity and runtime-relative canonical path; MatchesProgram
+compares the referenced P3SP identity. Content loading uses IContentStreamSource and
+reports required texture/shader failures without fallback. Shaders remain disabled
+until the separate standard build/rendering acceptance gates pass.

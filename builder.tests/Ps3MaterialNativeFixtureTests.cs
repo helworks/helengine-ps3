@@ -66,6 +66,7 @@ public sealed class Ps3MaterialNativeFixtureTests {
             shaderDependency.PixelProgramName,
             shaderDependency.VariantName);
         Assert.Equal(ExpectedShaderRelativePath, identity.RelativePath);
+        Assert.Equal("cooked/" + ExpectedShaderRelativePath, identity.RuntimeRelativePath);
 
         PlatformShaderArtifactCookSource shaderSourceSnapshot = new(
             shaderDependency.ShaderAssetId,
@@ -73,7 +74,7 @@ public sealed class Ps3MaterialNativeFixtureTests {
             shaderSource,
             shaderSourcePath);
         PlatformShaderArtifactCookRequest shaderRequest = new(
-            fixtureRoot,
+            Path.Combine(fixtureRoot, "cooked"),
             "ps3",
             "release",
             Ps3MaterialSchemaIds.StandardGraphicsProfileId,
@@ -81,9 +82,11 @@ public sealed class Ps3MaterialNativeFixtureTests {
             [shaderSourceSnapshot]);
         PlatformShaderArtifactCookResult shaderResult = CookShaderArtifacts(shaderRequest);
         PlatformCookedArtifactDeclaration shaderArtifact = Assert.Single(shaderResult.CookedArtifactDeclarations);
-        Assert.Equal(identity.RelativePath, shaderArtifact.RelativePath);
+        Assert.Equal(identity.RuntimeRelativePath, shaderArtifact.RelativePath);
+        Assert.Equal(identity.RelativePath, shaderArtifact.LogicalArtifactId);
         Assert.True(File.Exists(ResolveFixturePath(fixtureRoot, shaderArtifact.RelativePath)),
             "The production shader artifact cooker did not publish the declared P3SP file.");
+        Assert.False(Directory.Exists(Path.Combine(fixtureRoot, "cooked", "cooked")));
 
         WriteNewFile(Path.Combine(fixtureRoot, "material.p3mt"), materialResult.CookedMaterialBytes);
     }

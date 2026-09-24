@@ -3,7 +3,7 @@
 `Ps3MaterialArtifactReader` decodes the exact version-one `P3MT` envelope into an owning `Ps3CookedMaterial` DTO. It accepts the PS3 standard renderer's fixed `ForwardStandardShader` pair and requires the canonical shader lookup path:
 
 ```text
-shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp
+cooked/shaders/76a43ab5bef0cb1c1deca6d3a596d9a5e6f2ff86ce65b03d009a0d63b207b615.ps3sp
 ```
 
 The wire contract and producer-side semantics are defined in [Ps3MaterialArtifactFormat.md](Ps3MaterialArtifactFormat.md). The native reader checks a 12-byte header, exact total length, a 1 MiB envelope limit, a 65,536-byte per-string limit, strict UTF-8 without NUL, and exact end-of-input. It retains the four raw RGBA bytes and every supported surface flag: bit 0 lit, bit 1 double-sided, and bit 2 vertex-color. Any other flag bit fails.
@@ -13,6 +13,15 @@ All required identity strings must be nonblank. The optional diffuse texture str
 `MatchesProgram` rechecks the fixed material contract and compares shader asset, vertex program, pixel program, and variant names by exact string equality against a `Ps3CookedShaderProgram` already decoded by `Ps3ShaderArtifactReader`. It does not open files, load a texture, select a fallback, or perform GPU work.
 
 ## Producer fixture and PPU target
+
+The current fixture uses fixtureRoot/cooked as the production shader CookRootPath;
+the shader declaration and P3MT reference therefore resolve beneath fixtureRoot at
+cooked/shaders/<hash>.ps3sp. material.p3mt stays directly under fixtureRoot. Prior
+producer-002 fixtures remain immutable historical inputs and must not be used with
+the new canonical-path reader. The additional malformed case explicitly rejects
+the old unprefixed shaders/<hash>.ps3sp reference. No binary patching or native
+lookup fallback is used. This parser fixture retains vertex-color/translucent flags
+to exercise wire preservation; it is not a drawable standard-scene material.
 
 The Docker-category `ProducesNativeMaterialFixture` test uses the production `Ps3MaterialCooker` and shader artifact cooker. It reads `ForwardStandardShader.hlsl` from the explicitly resolved sibling `HELENGINE_ROOT`, passes the material's sole returned shader dependency to the cooker, verifies the production identity path, and writes `material.p3mt` with the real cooked P3SP artifact beneath the fixture root. No texture file is needed for this CPU parsing gate.
 
@@ -59,6 +68,14 @@ To execute the PPU cases, pass `-RpcS3Path` only after the parent has coordinate
 
 ## Validation boundary
 
+Runtime-path follow-up (2026-09-24): focused host suites passed80/0 after four
+path-domain assertions were observed failing against the old producer. Fresh real
+fixture producer-runtime-path-003 passed1/1. Material session18211 passed66/0 at
+native-material/ppu-runs/runtime-path-material-001/emulator-runs/20260924-060446/TTY.log,
+including rejects_legacy_cook_relative_shader_path. The fresh P3SP SHA256 remains
+233615d7dc7cce7ccd3f2d57bfd1b67a969437c22be35e37033da1312a7f7cb3,
+identical to producer-002. The pure runner path suite still passes15/0.
+
 The native suite reads actual producer material and shader artifacts, validates their identity pair, and exercises malformed in-memory copies. It does not load texture content or draw a Core scene. Those remain later native material-loader and renderer work; this reader alone does not enable PS3 shader runtime support.
 
 The runner's pure path contract test extracts only the `Assert-StrictChildPath` function AST; it does not execute the Docker/build body or create test files. Run it under the supported Windows PowerShell 5.1 with:
@@ -67,7 +84,7 @@ The runner's pure path contract test extracts only the `Assert-StrictChildPath` 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/tests/ps3-material-reader-paths.tests.ps1
 ```
 
-## Final native evidence (2026-09-24)
+## Historical native evidence before runtime-path recook (2026-09-24)
 
 - The production producer fixture test passed 1/1 under `fixtures/producer-002`. Its actual P3MT and standard P3SP outputs were consumed by the native test; no fixture bytes were authored by the native harness.
 - Path-test RED against the old validator was 13/15: the root-relative `Path` and root-relative `Parent` cases were incorrectly accepted. After the lexical drive-absolute/complete-UNC guard was added, Windows PowerShell 5.1 reported `PS3_MATERIAL_READER_PATH_TESTS passed=15 failed=0`. The suite also verifies child acceptance, equality with both trailing separator forms, ancestor/sibling-prefix rejection, relative and drive-relative rejection, and complete-UNC acceptance.

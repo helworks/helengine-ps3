@@ -129,8 +129,8 @@ public sealed class Ps3ShaderArtifactCooker {
             string finalPath = Path.Combine(cookRootPath, identity.RelativePath.Replace('/', Path.DirectorySeparatorChar));
             WriteArtifactAtomically(finalPath, preparedArtifacts[identity.RelativePath]);
             declarations.Add(new PlatformCookedArtifactDeclaration(
-                identity.RelativePath,
-                identity.RelativePath,
+                relativePath: identity.RuntimeRelativePath,
+                logicalArtifactId: identity.RelativePath,
                 "shader",
                 identity.VariantName));
         }
