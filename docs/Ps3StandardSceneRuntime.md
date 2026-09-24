@@ -38,6 +38,21 @@ parent's separate integration gate.
 
 ## Status
 
+Correction2026-09-24: the authored CubeTestSolid is a standard lit material. The
+Unlit state observed in standard04/05 was introduced by the PS3 schema/cooker
+default, not authored in the common asset. The two PS3 defaults are now Lit,
+while explicit Unlit remains supported. Focused cooker regression: RED4 failures,
+GREEN29/29. Standard06 and its RPCS3 run passed real-scene lighting validation; see
+`superpowers/execution/ps3-shader-integration/lighting-default-acceptance-20260924.md`
+for the diagnosis and pre-recorded pixel oracle. No DemoDisc asset was changed.
+
+Standard06: cooked flags1, Lit1, first center292929 matching the independently
+calculated oracle, final2A2A2A within tolerance2, corner6495ED. It completed896
+frames/draws, normal duration exit, Core disposal, GPU drain and authored cache
+retirement with ownedGpuBytes0, shutdown0. The user confirmed the visible result.
+Nonempty diffuse-content coverage and global shader feature enablement remain
+separate gates. The following standard04/05 records are historical Unlit evidence.
+
 Parent standard04 compiled with exit0. Its immutable SELF rendered the unchanged
 cube_test through the authored ForwardStandard program with unlit white material.
 Lighting acceptance and feature enablement remain pending; shaders stays forced-disabled.

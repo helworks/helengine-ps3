@@ -64,9 +64,70 @@ public sealed class Ps3MaterialCookerTests {
         Assert.Equal(byte.MaxValue, cooked.Green);
         Assert.Equal(byte.MaxValue, cooked.Blue);
         Assert.Equal(byte.MaxValue, cooked.Alpha);
-        Assert.Equal(0u, cooked.SurfaceFlags);
+        Assert.Equal(1u, cooked.SurfaceFlags);
         Assert.Equal(string.Empty, cooked.TextureRelativePath);
         Assert.Equal("ForwardStandard", cooked.VariantName);
+    }
+
+    /// <summary>Verifies cooking the actual published schema defaults selects standard scene lighting.</summary>
+    [Fact]
+    public void CookMaterial_UsesPublishedSchemaFieldDefaults() {
+        PlatformDefinition definition = Ps3PlatformDefinitionFactory.Create();
+        PlatformMaterialSchemaDefinition schema = Assert.Single(definition.MaterialSchemas);
+        Dictionary<string, string> fieldDefaults = new(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in schema.Fields) {
+            fieldDefaults.Add(field.FieldId, field.DefaultValue);
+        }
+
+        DecodedMaterial cooked = Decode(new Ps3PlatformAssetBuilder().CookMaterial(CreateRequest(fieldDefaults)));
+
+        Assert.Equal(1u, cooked.SurfaceFlags);
+    }
+
+    /// <summary>Verifies CubeTestSolid-shaped common fields without a lighting override retain lit rendering.</summary>
+    [Fact]
+    public void CookMaterial_DefaultsCubeTestSolidShapedFieldsToLit() {
+        Dictionary<string, string> fields = new(StringComparer.OrdinalIgnoreCase) {
+            [Ps3MaterialSchemaIds.BaseColorFieldId] = "#ffffffff",
+            ["casts-shadow"] = "false"
+        };
+
+        DecodedMaterial cooked = Decode(new Ps3PlatformAssetBuilder().CookMaterial(CreateRequest(fields)));
+
+        Assert.Equal(1u, cooked.SurfaceFlags);
+    }
+
+    /// <summary>Verifies an explicit Lit choice serializes the lighting flag.</summary>
+    [Fact]
+    public void CookMaterial_RecordsExplicitLitChoice() {
+        Dictionary<string, string> fields = CreateFields("#FFFFFFFF");
+        fields[Ps3MaterialSchemaIds.LightingModeFieldId] = Ps3MaterialSchemaIds.LightingLitValue;
+
+        DecodedMaterial cooked = Decode(new Ps3PlatformAssetBuilder().CookMaterial(CreateRequest(fields)));
+
+        Assert.Equal(1u, cooked.SurfaceFlags);
+    }
+
+    /// <summary>Verifies an explicit Unlit choice clears the lighting flag.</summary>
+    [Fact]
+    public void CookMaterial_RecordsExplicitUnlitChoice() {
+        Dictionary<string, string> fields = CreateFields("#FFFFFFFF");
+        fields[Ps3MaterialSchemaIds.LightingModeFieldId] = Ps3MaterialSchemaIds.LightingUnlitValue;
+
+        DecodedMaterial cooked = Decode(new Ps3PlatformAssetBuilder().CookMaterial(CreateRequest(fields)));
+
+        Assert.Equal(0u, cooked.SurfaceFlags);
+    }
+
+    /// <summary>Verifies a blank lighting choice follows the lit schema fallback.</summary>
+    [Fact]
+    public void CookMaterial_DefaultsBlankLightingChoiceToLit() {
+        Dictionary<string, string> fields = CreateFields("#FFFFFFFF");
+        fields[Ps3MaterialSchemaIds.LightingModeFieldId] = " ";
+
+        DecodedMaterial cooked = Decode(new Ps3PlatformAssetBuilder().CookMaterial(CreateRequest(fields)));
+
+        Assert.Equal(1u, cooked.SurfaceFlags);
     }
 
     /// <summary>Verifies the sole reported dependency exactly matches all envelope identity fields and its derived path.</summary>

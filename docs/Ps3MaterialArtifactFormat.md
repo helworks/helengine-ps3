@@ -46,7 +46,7 @@ A nonempty texture path is relative to the supplied content stream and uses forw
 
 The PS3 standard schema owns the fixed `ForwardStandardShader` pair and always selects `ForwardStandard`. A general editor `variant=Mesh` field is unrelated to PS3 shader selection and is ignored. An explicit `use-custom-shader=true` request is unsupported and fails with an actionable error; absent or false leaves the standard pair selected, while malformed nonblank boolean text fails validation.
 
-The cooker retains the current schema defaults: `#FFFFFFFF` base color, empty texture path, unlit lighting, double-sided false, and vertex-color mode `ignore`. Thus a default envelope has opaque white RGBA and no surface flags. Roughness, metallic and specular values are not encoded by this schema; a future runtime consumer must use the shared standard shader's documented defaults for fields the schema does not expose. Adding authored controls requires a separate explicit contract.
+The schema and cooker defaults are `#FFFFFFFF` base color, empty texture path, lit lighting, double-sided false, and vertex-color mode `ignore`. Thus a default envelope has opaque white RGBA and surface flags `1`. An explicit `lighting-mode=unlit` still clears bit0; the binary layout is unchanged. This matches the standard material's scene-lighting behavior when no platform override is authored. Materials cooked with the previous Unlit default must be recooked. Roughness, metallic and specular values are not encoded by this schema; the runtime uses the shared standard shader's documented defaults for fields the schema does not expose. Adding authored controls requires a separate explicit contract.
 
 ## Native migration boundary
 

@@ -40,7 +40,8 @@ public sealed class Ps3MaterialCooker {
         IReadOnlyDictionary<string, string> fields = request.FieldValues;
         string baseColorValue = Resolve(fields, Ps3MaterialSchemaIds.BaseColorFieldId, "#FFFFFFFF");
         string texturePath = ResolveTexturePath(fields);
-        string lightingMode = Resolve(fields, Ps3MaterialSchemaIds.LightingModeFieldId, Ps3MaterialSchemaIds.LightingUnlitValue);
+        // Standard materials receive scene lighting unless the platform material explicitly requests Unlit.
+        string lightingMode = Resolve(fields, Ps3MaterialSchemaIds.LightingModeFieldId, Ps3MaterialSchemaIds.LightingLitValue);
         string doubleSidedMode = Resolve(fields, Ps3MaterialSchemaIds.DoubleSidedFieldId, "false");
         string vertexColorMode = Resolve(fields, Ps3MaterialSchemaIds.VertexColorModeFieldId, Ps3MaterialSchemaIds.VertexColorIgnoreValue);
 

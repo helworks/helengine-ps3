@@ -101,3 +101,27 @@ Standard05 TERMINAL exit0 at06:25:28Z, invocation0a1535a0-7e5a-4e9e-8e71-3e5f0f4
 Authored log checker first54/54 exposed three scoped-review consistency gaps; accepted fixes now have RED12 (57/69) and GREEN69/69. Parent inspected the failure/pass logs and ran the revised checker on real standard05:PASS explicitFFFFFF/Lit0/tolerance0. Reviewer is closing exactly those3findings. This is not a lighting oracle; no lighting claim or shader-feature enablement. No nativebuild/emulator live. The remaining scope decision is unchanged: user must choose single authored material Lit authorization or keep scene intact with separate lighting fixture. No project changes have been made.
 
 Checker rereview completed: all3findings closed, no remaining blockers in its bounded scope. Parent real05 check remains the latest actual-run evidence. Remaining authority boundary is the unanswered lighting choice, not a compiler/runtime failure. Native sources and tests are frozen; no background native processes or unfinished implementation agents are required for the current unlit milestone.
+
+## Lighting diagnosis correction
+
+User corrected the assumption: CubeTestSolid is Lit. Source/asset tracing confirms
+the common material has no lighting-mode; our PS3 schema filled in Unlit and the
+cooker also used Unlit fallback. The above requests to change the authored material
+were based on an incorrect inference from cooked flags0, and are superseded.
+User approved the PS3 correction. Luna changed only the schema/cooker defaults and
+added behavior tests: RED4/29 then GREEN29/29; explicit Unlit remains flags0.
+No authored/shared source changes. Parent recorded independent shader-equation
+oracle292929 tolerance2, clear6495ED before runtime. Builderb4 compiled0errors
+(41preexisting warnings), isolated registration updated. Standard06 active
+session16313/child187816; parent owns runtime/commit. Scoped reviewer Russell
+01a0d374-7d62-7052-a44f-00ad4e74913a. Feature enablement remains a separate gate.
+
+Standard06 now TERMINAL exit0; visible run20260924-125923 launcher/application0.
+Actual first-frame flags1/Lit1/HasDir1 and all submitted values match the recorded
+lighting oracle. Firstcenter292929, final2A2A2A, corners6495ED; explicit checker
+ExpectedCenterRgb292929/Lit1/tolerance2 PASS.896frames/draws, CoreDispose, drain,
+cacheGPU0 and shutdown0. User visually approved. Original material and protected
+three dirty files retain their pre-task SHA256 values. Scoped review approved with
+no findings; parent confirmed unknown lighting choices still fail. No agents or
+build/emulator sessions remain active. Default-lighting correction is validated;
+nonempty texture-content/global shader feature gates remain separate.

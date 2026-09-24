@@ -134,6 +134,39 @@ if (stream.ReadByte() != -1) throw std::runtime_error("content grew while being 
 
 ## Task 2: End-to-end acceptance and feature decision
 
+### Corrective step: standard material lighting default (user approved 2026-09-24)
+
+The earlier inference that CubeTestSolid was authored Unlit was incorrect. Its common
+document contains base-color and casts-shadow, with no lighting-mode. Its Windows
+override selects the lit ForwardStandard shader. The editor fills absent fields from
+the selected platform schema; our PS3 schema and cooker both chose Unlit. Correct
+the PS3 default, not the authored asset or shared editor.
+
+**Luna write scope:** `builder/Ps3PlatformDefinitionFactory.cs`,
+`builder/Ps3MaterialCooker.cs`, `builder.tests/Ps3MaterialCookerTests.cs`.
+
+- [ ] First change the no-authored-fields test to require `SurfaceFlags == 1u`.
+  Add behavior tests cooking the actual published schema field defaults (expect1),
+  common CubeTestSolid-shaped fields base-color=#ffffffff and casts-shadow=false
+  without lighting-mode (expect1), explicit lit (expect1), explicit unlit (expect0),
+  and blank lighting-mode (expect1, matching the existing Resolve contract).
+  Keep unknown lighting choice rejection. Do not derive expected flags from schema.
+- [ ] Run the focused Ps3MaterialCookerTests before production edits and retain RED.
+- [ ] Change only the schema lighting default and cooker's Resolve fallback from
+  `Ps3MaterialSchemaIds.LightingUnlitValue` to `Ps3MaterialSchemaIds.LightingLitValue`.
+  Leave choice values, parser, binary layout, explicit overrides and native provider
+  untouched. Explain in substantive comments that standard materials receive scene
+  lighting unless the platform material explicitly requests Unlit.
+- [ ] Run focused GREEN using `dotnet test builder.tests/helengine.ps3.builder.tests.csproj
+  -c Release --artifacts-path <owned-root>/material-lighting/tests
+  -p:HelengineRoot=C:/dev/helworks/helengine --filter FullyQualifiedName~Ps3MaterialCookerTests`.
+  Redirect TEMP/TMP to owned directories and restore them; logs under owned-root.
+- [ ] Parent reviews tests and minimal production diff, then rebuilds/registers b4
+  and runs the normal platform driver and RPCS3. Require cooked flags1, submitted
+  Lit1, actual directional light and shader-equation-derived pixels, not merely
+  nonclear geometry. Preserve the authored material bytes and keep shaders disabled
+  until the existing final gates pass. Parent commits named files after validation.
+
 **Modify:** `scripts/tests/ps3-runtime-visible-content.tests.ps1` (retain its existing smoke mode; add an explicit authored-shader acceptance mode), `docs/Ps3StandardSceneRuntime.md`; only after all gates pass, `builder/Ps3PlatformDefinitionFactory.cs` and its named existing definition tests to remove just `shaders` from the disabled list and update stale descriptions.
 
 Build root is `C:/dev/helworks/builds/helengine-ps3/shader-integration-20260923/standard-scene`; output and cache directories must be disjoint siblings. Register the new builder DLL with the existing optional `-BuilderAssemblyPath` and isolated HELENGINE_ENGINE_USER_SETTINGS_ROOT. Set HELENGINE_PS3_REPOSITORY_ROOT explicitly. Exact standard build driver:

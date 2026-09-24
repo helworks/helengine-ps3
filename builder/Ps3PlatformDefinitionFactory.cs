@@ -59,7 +59,8 @@ public static class Ps3PlatformDefinitionFactory {
             [
                 new(Ps3MaterialSchemaIds.BaseColorFieldId, "Base Color", PlatformMaterialFieldKind.Color, "#FFFFFFFF", true, []),
                 new(Ps3MaterialSchemaIds.TextureRelativePathFieldId, "Texture", PlatformMaterialFieldKind.Text, string.Empty, true, []),
-                new(Ps3MaterialSchemaIds.LightingModeFieldId, "Lighting", PlatformMaterialFieldKind.Choice, Ps3MaterialSchemaIds.LightingUnlitValue, true, [Ps3MaterialSchemaIds.LightingLitValue, Ps3MaterialSchemaIds.LightingUnlitValue]),
+                // Standard materials receive scene lighting unless the platform material explicitly requests Unlit.
+                new(Ps3MaterialSchemaIds.LightingModeFieldId, "Lighting", PlatformMaterialFieldKind.Choice, Ps3MaterialSchemaIds.LightingLitValue, true, [Ps3MaterialSchemaIds.LightingLitValue, Ps3MaterialSchemaIds.LightingUnlitValue]),
                 new(Ps3MaterialSchemaIds.DoubleSidedFieldId, "Double Sided", PlatformMaterialFieldKind.Boolean, "false", true, []),
                 new(Ps3MaterialSchemaIds.VertexColorModeFieldId, "Vertex Color", PlatformMaterialFieldKind.Choice, Ps3MaterialSchemaIds.VertexColorIgnoreValue, true, [Ps3MaterialSchemaIds.VertexColorModulateValue, Ps3MaterialSchemaIds.VertexColorIgnoreValue])
             ]);
