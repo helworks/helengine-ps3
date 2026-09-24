@@ -114,13 +114,32 @@ public sealed class Ps3ShaderSourceCompiler {
         return spirvBytes;
     }
 
+    /// <summary>Finds the packaged SPIRV-Cross library beside the compiler assembly.</summary>
+    /// <param name="compilerAssemblyLocation">Fully qualified file location reported by the compiler assembly.</param>
+    /// <returns>The absolute path to that package's Windows x64 SPIRV-Cross library.</returns>
+    /// <exception cref="ArgumentException">The assembly location is missing, not fully qualified, or lacks a file component.</exception>
+    internal static string ResolveSpirvCrossLibraryPath(string compilerAssemblyLocation) {
+        if (string.IsNullOrWhiteSpace(compilerAssemblyLocation) || !Path.IsPathFullyQualified(compilerAssemblyLocation)) {
+            throw new ArgumentException("The PS3 compiler assembly must have a fully qualified file location.", nameof(compilerAssemblyLocation));
+        }
+
+        string assemblyPath = Path.GetFullPath(compilerAssemblyLocation);
+        string assemblyFileName = Path.GetFileName(assemblyPath);
+        string assemblyDirectory = Path.GetDirectoryName(assemblyPath);
+        if (string.IsNullOrEmpty(assemblyFileName) || string.IsNullOrEmpty(assemblyDirectory)) {
+            throw new ArgumentException("The PS3 compiler assembly location must include both a directory and a file name.", nameof(compilerAssemblyLocation));
+        }
+
+        return Path.Combine(assemblyDirectory, "runtimes", "win-x64", "native", "spirv-cross.dll");
+    }
+
     /// <summary>Reflects compiler metadata, assigns stable names, and emits legacy GLSL without source rewriting.</summary>
     /// <param name="spirv">Frontend output.</param>
     /// <param name="request">Entry point and execution stage.</param>
     /// <param name="dependencies">Active dependencies copied from the include session before disposal.</param>
     /// <returns>Generated source and immutable metadata translation.</returns>
     unsafe Ps3ShaderTranslation EmitGlsl(byte[] spirv, ShaderCompileRequest request, IReadOnlyList<Ps3ShaderSourceDependency> dependencies) {
-        string library = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", "spirv-cross.dll");
+        string library = ResolveSpirvCrossLibraryPath(typeof(Ps3ShaderSourceCompiler).Assembly.Location);
         if (!File.Exists(library)) throw new FileNotFoundException("Packaged SPIRV-Cross library is missing.", library);
         using Cross api = new(Cross.CreateDefaultContext([library]));
         Context* context = null;
