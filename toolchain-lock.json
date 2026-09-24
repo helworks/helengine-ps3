@@ -43,6 +43,10 @@
                                           {
                                               "Name":  "0001-psl1ght-rsx-context-callback-memory-clobber.patch",
                                               "Sha256":  "d639fe776f4e3abb05b3a37a1eb20e7b97458ba1cb68fe9c596116d904cf1433"
+                                          },
+                                          {
+                                              "Name":  "0002-cgcomp-fragment-parser-capacity.patch",
+                                              "Sha256":  "1d57ad8d57b202cd269506e2e2b5d774cf183efbab46c3648167b283b46e63d2"
                                           }
                                       ]
                },
@@ -59,11 +63,11 @@
                           "LibCgSha256":  "01c8bbbd3c373cb5f337ab0fd7a252b9d01212d35ffc1e2ea2ea8de9d1e557d3"
                       },
     "ResolvedImage":  {
-                          "Tag":  "helengine-ps3-sdk:5985b8a0064be1e007e740131836e138aa582c464fe292411efb6f82c43e18ad",
-                          "ImageId":  "sha256:da929def76aacc0a5f499e1b8be143912062ab4a93b206277ead4de9530fe411",
-                          "InputsHash":  "5985b8a0064be1e007e740131836e138aa582c464fe292411efb6f82c43e18ad",
-                          "PreparedAtUtc":  "20260922-200735",
-                          "PrepareLog":  ".ps3/toolchain/prepare-20260922-200735.log",
+                          "Tag":  "helengine-ps3-sdk:fcb8e00920234b0cbe0e17d26f7b3d4bca77f9ca3ab401087a389caf6375fb4c",
+                          "ImageId":  "sha256:63a28f67dacb0a6d80c165645af126c7d6760e6a3b02e03b6e08aa5aeb96c40f",
+                          "InputsHash":  "fcb8e00920234b0cbe0e17d26f7b3d4bca77f9ca3ab401087a389caf6375fb4c",
+                          "PreparedAtUtc":  "20260924-003816",
+                          "PrepareLog":  "C:\\dev\\helworks\\builds\\helengine-ps3\\shader-integration-20260923\\cgcomp-capacity\\state\\toolchain\\prepare-20260924-003816.log",
                           "CompilerC":  "ppu-gcc (GCC) 13.2.0",
                           "CompilerCxx":  "ppu-g++ (GCC) 13.2.0",
                           "CompilerTarget":  "powerpc64-ps3-elf",
@@ -73,7 +77,7 @@
                           "NewlibPatchSha256":  "8b2d1addb0091ca2c58ae62ec189ca6e1720735732318c8c3be410a70e2aea2e",
                           "GccPatchSha256":  "13ac4a23f3330e03ba5267d662eacf38c4a91f51ba0eaef7583fd0fb53f7f995",
                           "BinutilsPatchSha256":  "4f3114a8cef16e05e7d8df1b3a37595e03e4ef670dd269a7f8a624143b5c88a8",
-                          "Psl1ghtLocalPatches":  "0001-psl1ght-rsx-context-callback-memory-clobber.patch=d639fe776f4e3abb05b3a37a1eb20e7b97458ba1cb68fe9c596116d904cf1433 ",
+                          "Psl1ghtLocalPatches":  "0001-psl1ght-rsx-context-callback-memory-clobber.patch=d639fe776f4e3abb05b3a37a1eb20e7b97458ba1cb68fe9c596116d904cf1433 0002-cgcomp-fragment-parser-capacity.patch=1d57ad8d57b202cd269506e2e2b5d774cf183efbab46c3648167b283b46e63d2 ",
                           "MachDep":  "-mhard-float -fmodulo-sched -ffunction-sections -fdata-sections",
                           "CpuFlag":  "-mcpu=cell",
                           "ReadelfPath":  "/opt/ps3dev/ppu/bin/ppu-readelf",
@@ -84,7 +88,7 @@
                           "BuilderAptPackagesSha256":  "f56ebc324a2a366c2841e5c8241da95aa250f65c804c80c16b4c984941dad252",
                           "Endian":  "powerpc64-ps3-elf big endian",
                           "Architecture":  "PowerPC64 (Cell PPU)",
-                          "ProbeDirectory":  ".ps3/toolchain/probe-20260922-200735",
+                          "ProbeDirectory":  "C:\\dev\\helworks\\builds\\helengine-ps3\\shader-integration-20260923\\cgcomp-capacity\\state\\toolchain\\probe-20260924-003816",
                           "ProbeVpoSha256":  "92853ff5e14ce1f70942eb1ee521a6d8858c136dc9bf11077e59b46b9472c711",
                           "ProbeFpoSha256":  "6ba4a0d6d6e475b1835def8bf5fe5daedd40d1989bf1473624f2f85a7958639c",
                           "ProbeElfSha256":  "abfe83fa6083cb22e9bed814316931be8b6a76c7fad7dd65161cf86f917f69da"

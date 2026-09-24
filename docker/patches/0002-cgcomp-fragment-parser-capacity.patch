@@ -1,0 +1,52 @@
+diff --git a/tools/cgcomp/source/fpparser.cpp b/tools/cgcomp/source/fpparser.cpp
+index 0000000..0000000 100644
+--- a/tools/cgcomp/source/fpparser.cpp
++++ b/tools/cgcomp/source/fpparser.cpp
+@@ -1,6 +1,7 @@
+ #include <ctype.h>
+ #include <stdio.h>
+ #include <string.h>
++#include <limits.h>
+ #include <stdlib.h>
+ 
+ #include "fpparser.h"
+@@ -151,3 +151,3 @@
+ {
+-	m_pInstructions = new struct nvfx_insn[MAX_NV_FRAGMENT_PROGRAM_INSTRUCTIONS];
++	m_pInstructions = NULL;
+ }
+@@ -160,4 +160,24 @@
+ {
+ 	int i,iline = 0;
+ 	bool inProgram = false;
++	if (str == NULL) {
++		fprintf(stderr, "cgcomp: fragment assembly source is null.\n");
++		exit(EXIT_FAILURE);
++	}
++
++	size_t capacity = 1;
++	for (const char *cursor = str; *cursor != '\0'; ++cursor) {
++		if (*cursor == '\n') {
++			if (capacity == static_cast<size_t>(INT_MAX)) {
++				fprintf(stderr, "cgcomp: fragment assembly has too many lines.\n");
++				exit(EXIT_FAILURE);
++			}
++			++capacity;
++		}
++	}
++	delete[] m_pInstructions;
++	m_pInstructions = NULL;
++	m_nInstructions = 0;
++	m_pInstructions = new struct nvfx_insn[capacity];
++
+ 	std::stringstream input(str);
+@@ -222,5 +267,9 @@ int CFPParser::Parse(const char *str)
+ 			if(opc.opcode>=MAX_OPCODE)
+ 				continue;
+ 			
++			if (static_cast<size_t>(m_nInstructions) >= capacity) {
++				fprintf(stderr, "cgcomp: fragment parser instruction capacity exceeded.\n");
++				exit(EXIT_FAILURE);
++			}
+ 			insn = &m_pInstructions[m_nInstructions];
+ 			param_str = SkipSpaces(strtok(NULL,"\0"));
