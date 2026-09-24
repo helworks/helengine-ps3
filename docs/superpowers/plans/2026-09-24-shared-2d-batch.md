@@ -70,6 +70,11 @@ six fields in that order; Variant uses Batch2DVariant.Textured or RoundedShape.
 Projection/viewport are fixed for a session, not implicit device state. Sampler is
 linear-clamp and blend is straight-alpha throughout this first contract. A future
 policy extension must become part of the key before accepting new state.
+The pixelViewport float4 is (x,y,width,height), with finite coordinates and strictly
+positive width/height. Include a nonzero-origin camera test; zero extents are invalid.
+Every ConfigureCamera call establishes a camera-session boundary, even when the
+projection and viewport values equal the previous camera's. Flush the old run
+before calling SetCamera; never infer camera identity from numeric equality.
 
 ## Task 1: Shared shader and converter feasibility
 
@@ -92,7 +97,7 @@ by the shared compiler test; do not treat source-derived metadata as reflection.
 Keep this distinct from the PS3 frontend and SDK binding proof below. Inspection
 of a different backend's compiled bytes is not Vulkan compilation evidence.
 
-- [ ] Add failing tests for the two exact variants, entry points, defines and reflection.
+- [x] Add failing tests for the two exact variants, entry points, defines and reflection.
   New shader identity must reject unknown variants; existing ForwardStandard and
   custom-default behavior must remain unchanged. Example assertions after compiling:
 
@@ -103,19 +108,19 @@ Assert.Equal("RoundedShape", rounded.VariantName);
 // one projection matrix, one 2D texture/sampler; shape's six attributes and no sampler.
 ```
 
-- [ ] Run RED using the existing focused shader test entry points. A missing source
+- [x] Run RED using the existing focused shader test entry points. A missing source
   file/type is an initial RED; final reflection assertions must exercise the real
   compiled output. This task proves compiler input shape/bindings; Task3's native
   sizeof/offsetof probe validates packed stride96 after Batch2DVertex exists and
   before any native integration is released.
-- [ ] Implement VS using `mul(input.Position, projection)` and pass required fields
+- [x] Implement VS using `mul(input.Position, projection)` and pass required fields
   only for the selected variant. Textured PS is exactly:
 
 ```hlsl
 return BatchTexture.Sample(BatchSampler, input.texCoord) * input.color;
 ```
 
-- [ ] Implement rounded signed-distance coverage with CPU-decoded corner flags;
+- [x] Implement rounded signed-distance coverage with CPU-decoded corner flags;
   select corner using local X/Y signs (top means localY<0). Radius clamps to the
   smaller half extent, border to nonnegative. Use fixed0.5 pixel coverage half-width
   with transformed geometry dimensions already expressed in pixels. No derivatives,
@@ -135,13 +140,13 @@ return float4(rgb, alpha);
 
   For border covering the entire shape, set inner coverage0 rather than evaluating
   a zero-size inner rectangle. Reject nonfinite source parameters in CPU expansion.
-- [ ] Compile both variants via available DX11/Vulkan/Vita/WiiU/PS3 backends.
+- [x] Compile both variants via available DX11/Vulkan/Vita/WiiU/PS3 backends.
   PS3 must reach immutable P3SP and validated SDK bindings, not just intermediate
   GLSL. Store named target results and source/toolchain hashes in build-root logs.
   Missing SDKs are explicit gaps; do not install SDKs or claim execution on them.
-- [ ] Test CPU coverage oracle at opaque center, transparent exterior, half-alpha
+- [x] Test CPU coverage oracle at opaque center, transparent exterior, half-alpha
   edge, border-only and asymmetric selected corners. Native plan supplies GPU proof.
-- [ ] Parent reviews exact files and compiler evidence before named commits.
+- [x] Parent reviews exact files and compiler evidence before named commits.
   Gate Task2 on PS3 conversion success; no guessed hardware attribute mappings.
 
 ## Task 2: Bounded CPU batch and synchronous sink
@@ -169,14 +174,14 @@ public void Flush();
 public void Dispose(); // releases CPU containers; never implicitly submits
 ```
 
-- [ ] RED tests use a recording sink that copies values during Submit. Append two
+- [x] RED tests use a recording sink that copies values during Submit. Append two
   identical-key quads then Flush: one run,8vertices,12indices. A/B/A: three runs in
   original order. Capacity1: two identical-key quads produce two submissions.
   ConfigureCamera is required before AppendQuad; a camera change flushes the old
   run before SetCamera and never merges across the boundary. Empty Flush produces
   none. Different scissor/variant splits a run. Literal index
   expectations for the second quad are4,5,6,4,6,7.
-- [ ] Implement equality using texture reference identity plus exact variant/scissor
+- [x] Implement equality using texture reference identity plus exact variant/scissor
   values. Validate state/finite vertices and live textured resource before mutation.
   Shape has no texture requirement; textured missing resource is an error.
   Validate capacity before arrays are allocated. Copy structs, never retain drawable
@@ -190,11 +195,11 @@ if (HasRun && (!SameRun(CurrentRun, run) || QuadCount == QuadCapacity)) {
 // Append four copied values and six checked ushort indices.
 ```
 
-- [ ] Add mutation test changing the original vertex/drawable after append; recorded
+- [x] Add mutation test changing the original vertex/drawable after append; recorded
   positions/colors must not change. Reject append/flush after disposal, invalid
   capacity, nonfinite vertices and invalid scissor extents. Zero-area scissor skips
   the draw deterministically; it must not become an unrestricted scissor.
-- [ ] GREEN: `dotnet test helengine.core.tests/helengine.core.tests.csproj
+- [x] GREEN: `dotnet test helengine.core.tests/helengine.core.tests.csproj
   --filter FullyQualifiedName~Batch2DWriterTests -c Release --artifacts-path <root>/shared-tests`.
   Run in shared engine directory; preserve output/TEMP rules. Parent checks counts,
   ownership annotations and source diff, then commits named files.
@@ -291,7 +296,8 @@ edit concurrently. Tests cover all five review risks; native lifetime/pixel evid
 is explicitly delegated to the dependent plan, not claimed here. Inspect actual
 generated signatures before native implementation; ABI failures require a plan
 amendment and revalidation rather than guesses. Both plans approved by the user on
-2026-09-24; Task1 is reviewed and committed. Task2 implementation is in progress.
+2026-09-24; Tasks1/2 are reviewed and committed. Task3 CPU expansion is in progress;
+the generated native ABI probe remains a required gate before native integration.
 
 ## Execution evidence — Task1 complete
 
@@ -322,3 +328,18 @@ Scoped review approved Task1 without findings. Parent final verification passed
 `commit-verification/shared.log` and `commit-verification/ps3.log`.
 Commits: shared `49b69e5f6f0c461eb8ff95545d0d904a5a59baa4`,
 PS3 `96c508f874db3110b4b596f7afbf1372082d6362`. Task2 is released.
+
+## Execution evidence — Task2 complete
+
+Shared commit `7c95bf0d0bf3bbb0e60fdaa36eaeb3d6ec726597` contains only the eight
+named writer/buffer/sink/value/test files. Every ConfigureCamera call is an explicit
+session boundary; equal-valued cameras do not merge. A regression test reproduced
+the old behavior (expected two submissions, actual one) before the fix.
+Scoped review and fix re-review accepted the implementation. Parent rebuilt against
+the concurrent shared HEAD and verified 23/23 focused tests, with only existing
+unrelated IDE0040 warnings. Evidence: `commit-verification/task2-fix-1-red.log`,
+`task2-fix-1-green.log`, and `task2-current-head.log` beneath the approved build root.
+One minor documentation wording nit remains: ConfigureCamera's summary says
+"before a change" rather than "before each camera session"; behavior is covered.
+Native generated layout, lowering, projection and GPU lifetime are not established
+by these C# tests and remain in the following gates.
