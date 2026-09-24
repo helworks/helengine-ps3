@@ -10,6 +10,9 @@ public sealed class Ps3ShaderArtifactCooker {
     /// <summary>Exact shader asset identifier whose variants are defined by the shared Standard Shader table.</summary>
     const string StandardShaderAssetId = "ForwardStandardShader";
 
+    /// <summary>Exact built-in sprite batch asset identifier whose variants come from the shared catalog.</summary>
+    const string SpriteBatchShaderAssetId = "SpriteBatchShader";
+
     /// <summary>Graphics profile accepted by the PS3 pair cooker.</summary>
     const string StandardGraphicsProfileId = "ps3-standard";
 
@@ -198,7 +201,7 @@ public sealed class Ps3ShaderArtifactCooker {
         }
     }
 
-    /// <summary>Resolves an exact Standard Shader variant or the narrow custom VS/PS default convention.</summary>
+    /// <summary>Resolves exact shared built-in variants or the narrow custom VS/PS default convention.</summary>
     /// <param name="shaderAssetId">Authored shader asset identity.</param>
     /// <param name="variantName">Exact requested variant name.</param>
     /// <returns>Shared entry points and source defines for the selected variant.</returns>
@@ -210,6 +213,14 @@ public sealed class Ps3ShaderArtifactCooker {
                 }
             }
             throw new InvalidOperationException($"PS3 Standard Shader variant '{variantName}' is not supported.");
+        }
+        if (string.Equals(shaderAssetId, SpriteBatchShaderAssetId, StringComparison.Ordinal)) {
+            foreach (StandardShaderVariant variant in SpriteBatchShaderVariants.All) {
+                if (string.Equals(variant.Name, variantName, StringComparison.Ordinal)) {
+                    return variant;
+                }
+            }
+            throw new InvalidOperationException($"PS3 Sprite Batch Shader variant '{variantName}' is not supported.");
         }
         if (!string.Equals(variantName, "default", StringComparison.Ordinal)) {
             throw new InvalidOperationException($"PS3 custom shader asset '{shaderAssetId}' supports the exact 'default' variant only, received '{variantName}'.");
