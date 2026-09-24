@@ -220,35 +220,50 @@ Batch2DRun)`, `EmitText(ITextDrawable2D,Batch2DRun)`,
 Projection utility returns float4x4 from a validated pixel viewport; native code
 uses the same coefficients and reflected matrix layout.
 
-- [ ] RED tests pin a sprite destination(10,20,30,40): corners(10,20),(40,20),
+Measured boundary clarification: generated Core retains source row-vector matrices;
+the profile's native-column-vector token does not rewrite matrix bodies. The PS3
+SDK vectors must contain Core columns for the actual shader DP4 instructions.
+Preserve the initial raw-column probe failure and validate the explicitly packed
+boundary separately; do not change shared matrix coefficients to satisfy that
+incorrect initial oracle. Native GPU upload/pixel proof remains mandatory later.
+
+- [x] RED tests pin a sprite destination(10,20,30,40): corners(10,20),(40,20),
   (40,60),(10,60); source(.25,.5,.5,.25) yields UV(.25,.5)..(.75,.75).
   Add nonuniform parent scale and rotation about the existing sprite center, tint
  255/128/0/64, empty/disabled drawables, texture-sized fallback when Size is nonpositive.
   Validate shader output position against viewport offset, not just origin0.
-- [ ] Implement shared geometry with double intermediate math and float output;
+- [x] Implement shared geometry with double intermediate math and float output;
   match current component transform conventions rather than inventing pivot APIs.
   Projection maps viewport top-left to(-1,+1) and bottom-right to(+1,-1).
   Rounded local coordinates remain unrotated while screen positions rotate.
-- [ ] RED text tests construct a two-glyph test font with literal metrics: atlas
+- [x] RED text tests construct a two-glyph test font with literal metrics: atlas
   16x16, glyphA UV(0,0,.25,.5), advance5, offsetY2, lineHeight10, space3;
   at scale2, glyph size8x16, advance10, baseline offset4. Test `A A\nA`, wrapping,
   left/center/right offsets using existing helpers and missing-character behavior.
   Verify per-glyph shadow, four outline copies, then main glyph order matches DX11.
-- [ ] Implement text using the existing helpers and font atlas dimensions. Do not
+- [x] Implement text using the existing helpers and font atlas dimensions. Do not
   rasterize or shape fonts again, replace missing glyph policy, or duplicate layout
   in native C++. Dispose helper-owned lists/arrays under native ownership rules.
-- [ ] Test solid and rounded fills, all16 corner masks, border0, border>=half-size,
+- [x] Test solid and rounded fills, all16 corner masks, border0, border>=half-size,
   rotation and alpha. Decode mask in CPU; emit per-quad shape attributes. Do not
   use per-object uniforms. Reuse clip-chain resolution; scissor is supplied as a
   snapshot and affects run breaks rather than modifying already queued commands.
-- [ ] GREEN focused Batch2D tests plus existing text/region tests affected by actual
+- [x] GREEN focused Batch2D tests plus existing text/region tests affected by actual
   changes. Generate Core using the existing standard codegen path and compile a
   Docker probe that constructs writer/emitter and a recording native sink, checks
   value layout and invokes text expansion. Record actual generated signatures in
   `docs/Shared2DBatchContract.md` in the PS3 repo for the native handoff. If reachability
   omits types, fix the owning source/codegen-root declaration; never patch output.
   No native integration dispatch until this probe passes.
-- [ ] Parent reviews and commits exact task files and measured contract document.
+- [x] Parent reviews and commits exact task files and measured contract document.
+
+Task3 completion: shared `d98d0020`,94/94 focused Release tests, standard
+build core-2c7f18d1a11343b3a21162969fa07513 exit0. PPU static ABI repeated;
+writer/SDK boundary6/6 and corrected generated text2/2 passed in RPCS3.
+The original raw-column assumption failure remains preserved and documented;
+the corrected oracle follows actual HLSL/SDK packing. Text array adapters were
+removed at shared source, regenerated normally and executed again. Native GPU
+integration, actual-scene UI pixels and GPU lifetime remain the dependent plan.
 
 ## Task 4: Renderer shader dependencies and packaging
 
@@ -268,24 +283,32 @@ public interface IPlatformRendererShaderDependencyProvider {
 }
 ```
 
-- [ ] RED: opted-in builder with zero material dependencies still delivers both
+- [x] RED: opted-in builder with zero material dependencies still delivers both
   SpriteBatchShader variants to the real shader cook request; non-opted-in builders
   preserve prior behavior. Duplicate identities deduplicate ordinally; conflicting
   identities or null entries fail explicitly. Do not mock the merge under test.
-- [ ] Implement resolver merging renderer dependencies before the existing
+- [x] Implement resolver merging renderer dependencies before the existing
   zero-dependency early return. Reuse EditorProjectShaderSourceResolver and real
   SourcePath/hash forwarding. PS3 supplies the two identities fixed above. Missing
   shader artifact capability with declared dependencies is an explicit error.
-- [ ] Test real source resolution, two declared P3SP files in packaged `cooked/shaders`,
+- [x] Test real source resolution, two declared P3SP files in packaged `cooked/shaders`,
   source changes invalidate output, variant define changes invalidate the compile
   cache, and unchanged inputs remain deterministic. Use build-owned copied fixture
   sources for mutation tests, never authored or SDK output files.
-- [ ] Run focused editor and PS3 dependency/cooker tests; preserve prior material
+- [x] Run focused editor and PS3 dependency/cooker tests; preserve prior material
   cooking tests and no-shader builder behavior. Real converter test must prove both
   P3SPs contain expected identities/reflection and differ in program payload.
-- [ ] Parent verifies source fingerprint coverage, packaged path domain and exact
+- [x] Parent verifies source fingerprint coverage, packaged path domain and exact
   two variant identities, then commits separately per repo. This releases native
   plan Task1 only after Tasks1-3 also pass.
+
+Task4 completion: shared `716586ab`, PS3 `7f844c2`. Focused editor11/11 and
+PS329/29 pass, including real copied-HLSL mutation changing both compiled vertex
+payloads and byte-identical repeated cooks. Two existing broader editor regressions
+could not run through cooking because the isolated environment has no installed
+Windows platform descriptor; no global settings were changed. Preexisting scene
+cache/timing edits remain outside the shared commit. Task3 native revalidation still
+gates downstream renderer implementation.
 
 ## Parent self-review and execution handoff
 

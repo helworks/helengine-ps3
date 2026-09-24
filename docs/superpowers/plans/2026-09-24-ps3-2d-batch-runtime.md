@@ -35,6 +35,14 @@
 
 ## Entry gate and fixed contract
 
+Projection convention clarification (measured 2026-09-24): generated Core matrices
+retain the source row-vector convention, despite the profile metadata token
+`native-column-vector`. Both actual batch vertex programs emit DP4 against c[0..3].
+Pack Core columns into those vectors, as the existing 3D adapter does; do not move
+shared translation to M14/M24 or change HLSL multiplication. The initial raw-column
+probe failure is retained; the corrected boundary probe and later real GPU tests
+are separate evidence gates. See workflow `task-3-projection-boundary-correction.md`.
+
 Read the measured `docs/Shared2DBatchContract.md` from the shared plan. Do not invent
 generated C++ method spellings from C# names. Confirm generated writer/emitter/sink
 types exist and both actual PS3 shader variants have passed SDK compilation.
