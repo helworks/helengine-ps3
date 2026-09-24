@@ -294,6 +294,92 @@ public sealed class Ps3ShaderBindingMapTests {
         Assert.Equal(new[] { primaryParameter, secondaryParameter }, map.Uniforms.Select(binding => binding.RsxParameter));
     }
 
+    /// <summary>Accepts repeated writes of one fragment constant without changing SDK metadata or bytes.</summary>
+    [Fact]
+    public void PreservesRepeatedFragmentRelocationsWithinOneElement() {
+        Ps3RsxConstantElement element = new(0, null, new uint[] { 16, 16, 32 }, new uint[4]);
+        Ps3RsxParameter parameter = new("pixelTint", Ps3RsxParameterCategory.Constant, null, 1,
+            Ps3RsxDataType.Float4, new[] { element });
+        byte[] sdkBytes = { 0x50, 0x53, 0x33, 0x16, 0x32 };
+        Ps3RsxProgram pixelProgram = new(ShaderStage.Pixel, sdkBytes,
+            PixelOutputDump() + "#var float4 pixelTint :  : c[0] : -1 : 1\n", "test-sdk", new[] { parameter });
+
+        Ps3ShaderBindingMap map = Map(
+            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+            Program(ShaderStage.Vertex, VertexPositionLine),
+            Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(),
+                new[] { Uniform("Material", 0, "Tint", "pixelTint") }, uniformBuffers: [new("Material", 0, 16)]),
+            pixelProgram);
+
+        Ps3RsxParameter mappedParameter = Assert.Single(map.Uniforms).RsxParameter;
+        Assert.Same(parameter, mappedParameter);
+        Assert.Equal(new uint[] { 16, 16, 32 }, mappedParameter.Elements[0].FragmentRelocationOffsets);
+        Assert.Equal(sdkBytes, pixelProgram.Bytecode);
+    }
+
+    /// <summary>Rejects different pixel values claiming one fragment relocation address.</summary>
+    [Fact]
+    public void RejectsFragmentRelocationCollisionBetweenUniforms() {
+        Ps3RsxParameter primary = new("primaryTint", Ps3RsxParameterCategory.Constant, null, 1,
+            Ps3RsxDataType.Float4, new[] { new Ps3RsxConstantElement(0, null, new uint[] { 16 }, new uint[4]) });
+        Ps3RsxParameter secondary = new("secondaryTint", Ps3RsxParameterCategory.Constant, null, 1,
+            Ps3RsxDataType.Float4, new[] { new Ps3RsxConstantElement(0, null, new uint[] { 16 }, new uint[4]) });
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => Map(
+            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+            Program(ShaderStage.Vertex, VertexPositionLine),
+            Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(),
+                new[] { Uniform("Primary", 1, "Tint", "primaryTint"), Uniform("Secondary", 2, "Tint", "secondaryTint") },
+                uniformBuffers: [new("Primary", 1, 16), new("Secondary", 2, 16)]),
+            Program(ShaderStage.Pixel, PixelOutputDump() + "#var float4 primaryTint :  : c[0] : -1 : 1\n"
+                + "#var float4 secondaryTint :  : c[1] : -1 : 1\n", primary, secondary)));
+
+        Assert.Equal("Active pixel uniforms overlap fragment relocation offset 16.", error.Message);
+    }
+
+    /// <summary>Rejects matrix-element collisions even after legitimate repetitions within an earlier element.</summary>
+    /// <param name="repeatWithinFirstElement">Whether the first element repeats an otherwise valid address.</param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RejectsFragmentRelocationCollisionBetweenMatrixElements(bool repeatWithinFirstElement) {
+        uint[] firstOffsets = repeatWithinFirstElement ? new uint[] { 16, 16, 32 } : new uint[] { 16, 32 };
+        Ps3ShaderUniformMember matrix = new("Frame", 0, "Transform", 0, 48, 0, 16, false,
+            "pixelMatrix", "FP3232", 4, 3, 1);
+        Ps3RsxParameter parameter = new("pixelMatrix", Ps3RsxParameterCategory.Constant, null, 3,
+            Ps3RsxDataType.Float3x4, new[] {
+                new Ps3RsxConstantElement(0, null, firstOffsets, new uint[4]),
+                new Ps3RsxConstantElement(1, null, new uint[] { 32 }, new uint[4]),
+                new Ps3RsxConstantElement(2, null, new uint[] { 48 }, new uint[4])
+            });
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => Map(
+            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+            Program(ShaderStage.Vertex, VertexPositionLine),
+            Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(),
+                new[] { matrix }, uniformBuffers: [new("Frame", 0, 48)]),
+            Program(ShaderStage.Pixel, PixelOutputDump() + "#var float3x4 pixelMatrix :  : c[0], 3 : -1 : 1\n", parameter)));
+
+        Assert.Equal("Active pixel uniforms overlap fragment relocation offset 32.", error.Message);
+    }
+
+    /// <summary>Keeps repeated vertex constant registers invalid across distinct uniform values.</summary>
+    [Fact]
+    public void RejectsRepeatedVertexConstantRegister() {
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => Map(
+            Translation(ShaderStage.Vertex, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>(),
+                new[] { Uniform("Primary", 1, "Tint", "primaryTint"), Uniform("Secondary", 2, "Tint", "secondaryTint") },
+                uniformBuffers: [new("Primary", 1, 16), new("Secondary", 2, 16)]),
+            Program(ShaderStage.Vertex, VertexPositionLine + "#var float4 primaryTint :  : c[4] : -1 : 1\n"
+                + "#var float4 secondaryTint :  : c[4] : -1 : 1\n",
+                VertexConstant("primaryTint", Ps3RsxDataType.Float4, 1, 4),
+                VertexConstant("secondaryTint", Ps3RsxDataType.Float4, 1, 4)),
+            Translation(ShaderStage.Pixel, Array.Empty<Ps3ShaderInterfaceVariable>(), Array.Empty<Ps3ShaderInterfaceVariable>()),
+            Program(ShaderStage.Pixel, PixelOutputDump())));
+
+        Assert.Equal("Active vertex uniforms overlap SDK constant register 4.", error.Message);
+    }
+
     /// <summary>Uses physical SPIR-V matrix columns and vector width to reconcile the SDK constant-vector count.</summary>
     [Fact]
     public void MapsPhysicalFloat3x4MatrixToThreeVertexConstantRegisters() {

@@ -191,7 +191,8 @@ public sealed class Ps3ShaderBindingMapBuilder {
         return result;
     }
 
-    /// <summary>Rejects duplicate active hardware slots and overlapping constant registers or relocation words.</summary>
+    /// <summary>Rejects hardware-slot and constant-value collisions while accepting identical fragment writes within one element.</summary>
+    /// <remarks>The SDK can repeat relocation addresses for repeated source operands; distinct elements still cannot share an address.</remarks>
     /// <param name="uniforms">Mapped active uniform parameters from both stages.</param>
     /// <param name="attributes">Mapped vertex input parameters.</param>
     /// <param name="samplers">Mapped combined sampler parameters.</param>
@@ -213,7 +214,9 @@ public sealed class Ps3ShaderBindingMapBuilder {
                     string reference = "v:" + element.VertexRegister.Value.ToString(CultureInfo.InvariantCulture);
                     if (!constantReferences.Add(reference)) throw new InvalidOperationException($"Active vertex uniforms overlap SDK constant register {element.VertexRegister.Value}.");
                 } else {
+                    HashSet<uint> elementOffsets = new();
                     foreach (uint offset in element.FragmentRelocationOffsets) {
+                        if (!elementOffsets.Add(offset)) continue;
                         string reference = "f:" + offset.ToString(CultureInfo.InvariantCulture);
                         if (!constantReferences.Add(reference)) throw new InvalidOperationException($"Active pixel uniforms overlap fragment relocation offset {offset}.");
                     }
