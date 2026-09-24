@@ -8,7 +8,13 @@ using helengine;
 namespace helengine.ps3.builder;
 
 /// <summary>Publishes the PlayStation 3 platform contract and delegates native execution behind an injectable seam.</summary>
-public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder, IPlatformShaderArtifactBuilder, IShaderBackendRegistryContributor {
+public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder, IPlatformShaderArtifactBuilder, IPlatformRendererShaderDependencyProvider, IShaderBackendRegistryContributor {
+    /// <summary>Stores the immutable renderer-owned sprite batch shader variants declared by this platform.</summary>
+    static readonly IReadOnlyList<PlatformShaderDependency> RendererShaderDependenciesValue = Array.AsReadOnly(new PlatformShaderDependency[] {
+        new PlatformShaderDependency("SpriteBatchShader", "SpriteBatchShader.vs", "SpriteBatchShader.ps", "Textured"),
+        new PlatformShaderDependency("SpriteBatchShader", "SpriteBatchShader.vs", "SpriteBatchShader.ps", "RoundedShape")
+    });
+
     /// <summary>Executor that performs the native build phase.</summary>
     readonly IPs3NativeBuildExecutor NativeBuildExecutor;
 
@@ -56,6 +62,9 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder, IPlatformSh
 
     /// <summary>Gets the typed editor-facing platform definition.</summary>
     public helengine.baseplatform.Definitions.PlatformDefinition Definition { get; }
+
+    /// <summary>Gets the immutable shader program pairs required by the PS3 renderer for sprite batching.</summary>
+    public IReadOnlyList<PlatformShaderDependency> RendererShaderDependencies => RendererShaderDependenciesValue;
 
     /// <summary>
     /// Cooks one authored material into the platform-owned payload the PlayStation 3 renderer
