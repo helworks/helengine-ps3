@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using helengine.baseplatform.Requests;
 
 namespace helengine.ps3.builder;
@@ -10,6 +11,9 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
 
     /// <summary>Name of the environment variable overriding the PowerShell executable.</summary>
     public const string PowerShellVariable = "HELENGINE_PS3_POWERSHELL";
+
+    /// <summary>Name of the optional environment variable selecting the native run duration in seconds.</summary>
+    public const string RunSecondsVariable = "HELENGINE_PS3_NATIVE_RUN_SECONDS";
 
     /// <summary>Builds a Core-mode executable from the supplied generated Core root.</summary>
     /// <param name="request">Complete platform request.</param>
@@ -61,6 +65,7 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
         startInfo.ArgumentList.Add(Path.GetFullPath(generatedCoreRoot));
         startInfo.ArgumentList.Add("-ContentRoot");
         startInfo.ArgumentList.Add(Path.GetFullPath(contentRoot));
+        AppendRunDurationArgument(startInfo, Environment.GetEnvironmentVariable(RunSecondsVariable));
 
         using Process process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
         if (!process.Start()) {
@@ -84,5 +89,23 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
             !File.Exists(Path.Combine(buildRoot, "build-manifest.json"))) {
             throw new InvalidOperationException($"PlayStation 3 native build completed without a verified output manifest: {buildRoot}");
         }
+    }
+
+    /// <summary>Appends the optional validated native run duration as two process argument tokens.</summary>
+    /// <param name="startInfo">Process start description to extend.</param>
+    /// <param name="configuredValue">Optional unsigned decimal duration in seconds.</param>
+    /// <exception cref="ArgumentNullException">Thrown when the process start description is missing.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the configured duration is not from zero through 3600 seconds.</exception>
+    internal static void AppendRunDurationArgument(ProcessStartInfo startInfo, string configuredValue) {
+        ArgumentNullException.ThrowIfNull(startInfo);
+        if (string.IsNullOrEmpty(configuredValue)) {
+            return;
+        }
+        if (!uint.TryParse(configuredValue, NumberStyles.None, CultureInfo.InvariantCulture, out uint seconds)
+            || seconds > 3600u) {
+            throw new InvalidOperationException($"{RunSecondsVariable} must be an unsigned decimal integer from 0 through 3600.");
+        }
+        startInfo.ArgumentList.Add("-RunSeconds");
+        startInfo.ArgumentList.Add(seconds.ToString(CultureInfo.InvariantCulture));
     }
 }
