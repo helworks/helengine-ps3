@@ -2,53 +2,41 @@
 
 #include <ppu-types.h>
 #include <rsx/rsx.h>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+class IContentStreamSource;
+#endif
 
 #include "platform/ps3/Ps3Matrix4.hpp"
+#include "platform/ps3/Ps3MeshBuffers.hpp"
 
 namespace helengine::ps3 {
     class Ps3Video;
     struct Ps3Vertex;
 
-    /// RSX buffers backing one authored mesh.
-    ///
-    /// The renderer owns the programs and render state; a mesh owns only its own geometry,
-    /// so a scene with several models does not duplicate the pipeline. Zeroed fields mean
-    /// nothing was allocated, which is what an unbuilt model carries.
-    struct Ps3MeshBuffers {
-        /// Host pointer to the RSX-local vertex buffer, or null.
-        void* VertexBuffer;
+    class Ps3AuthoredContentCache;
+    class Ps3RuntimeMaterial;
+    struct Ps3StandardDrawData;
 
-        /// RSX offset of the vertex buffer.
-        u32 VertexBufferOffset;
-
-        /// Host pointer to the RSX-local index buffer, or null.
-        void* IndexBuffer;
-
-        /// RSX offset of the index buffer.
-        u32 IndexBufferOffset;
-
-        /// Number of indices uploaded.
-        u32 IndexCount;
-
-        /// True when the index buffer holds 32-bit values rather than 16-bit.
-        bool Uses32BitIndices;
-
-        /// RSX-local bytes this mesh owns.
-        u32 OwnedBytes;
-    };
-
-    /// Owns the GPU resources for the unlit cube and submits its draw: the embedded
-    /// vertex/fragment programs (reflected for POSITION/NORMAL/COLOR0 and lighting
-    /// constants), the fragment microcode copied into RSX memory, and static vertex
-    /// and index buffers uploaded once. Draw binds attributes and programs, uploads the
-    /// matrix, sets depth/cull state and issues one indexed triangle draw; nothing is
-    /// allocated per frame. Copying is disabled because the object owns GPU resources.
+    /// Owns diagnostic geometry/programs and source-isolated authored GPU caches.
+    /// Authored draws preflight reflected semantics, every active uniform and sampler;
+    /// the embedded path remains an explicit diagnostic entry point, never a fallback.
+    /// All GPU allocations are retained until successful video drain and Shutdown.
     class Ps3RasterRenderer {
     public:
         /// Creates an empty renderer; nothing is acquired until Initialize().
         Ps3RasterRenderer();
 
+        /// Destroys CPU bookkeeping; GPU retirement requires explicit post-drain Shutdown.
+        ~Ps3RasterRenderer();
+
+        /// GPU owners cannot be copied.
         Ps3RasterRenderer(const Ps3RasterRenderer&) = delete;
+        /// GPU ownership cannot be assigned.
         Ps3RasterRenderer& operator=(const Ps3RasterRenderer&) = delete;
 
         /// Reflects the embedded programs, copies the fragment microcode, uploads the cube
@@ -62,7 +50,7 @@ namespace helengine::ps3 {
         bool Draw(const Ps3Matrix4& modelViewProjection);
 
         /// Uploads one authored mesh into RSX memory.
-        /// @param vertices Vertex array in the renderer's 40-byte layout.
+        /// @param vertices Vertex array in the renderer's 48-byte layout.
         /// @param vertexCount Number of vertices.
         /// @param indices Triangle-list indices, 16 or 32 bit as declared below.
         /// @param indexCount Number of indices; must be a multiple of three.
@@ -73,7 +61,7 @@ namespace helengine::ps3 {
 
         /// Frees one uploaded mesh. Safe on a zeroed structure. The caller must have drained
         /// GPU work first, exactly as for the renderer's own buffers.
-        /// @param buffers Buffers to release; zeroed on return.
+        /// @param buffers Registered buffers; zeroed only after successful post-drain release.
         void ReleaseMesh(Ps3MeshBuffers& buffers);
 
         /// Submits one uploaded mesh with the given transform and material/light inputs.
@@ -91,6 +79,15 @@ namespace helengine::ps3 {
                          const float ambientLight[4], const float directionalLight[4],
                          const float directionalDirection[4]);
 
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        /// Loads P3MT and its P3SP/textures through the same source into renderer-owned caches.
+        Ps3RuntimeMaterial* BuildAuthoredMaterial(const std::string& path, ::IContentStreamSource& source, std::string& error);
+
+        /// Validates every authored binding before submitting an indexed ForwardStandard draw.
+        bool DrawAuthored(const Ps3MeshBuffers& buffers, const Ps3RuntimeMaterial& material,
+                          const Ps3StandardDrawData& draw, std::string& error);
+#endif
+
         /// Releases only the resources this renderer acquired. The caller must have drained
         /// GPU work successfully first; embedded program storage is static and never freed.
         void Shutdown();
@@ -98,7 +95,7 @@ namespace helengine::ps3 {
         /// Returns the RSX-local bytes owned by this renderer for diagnostics.
         unsigned OwnedBytes() const;
 
-        /// Returns how many cube draws were submitted.
+        /// Returns how many diagnostic or authored indexed draws were submitted.
         unsigned DrawCount() const;
 
     private:
@@ -109,7 +106,7 @@ namespace helengine::ps3 {
         static constexpr u32 FragmentUcodeAlignment = 64;
 
         /// Bytes between consecutive vertices (sizeof(Ps3Vertex)).
-        static constexpr u8 VertexStride = 40;
+        static constexpr u8 VertexStride = 48;
 
         /// Byte offset of the position inside a vertex.
         static constexpr u32 PositionByteOffset = 0;
@@ -119,6 +116,20 @@ namespace helengine::ps3 {
 
         /// Byte offset of the color inside a vertex.
         static constexpr u32 ColorByteOffset = 24;
+
+        /// Byte offset of authored TEXCOORD0.
+        static constexpr u32 TexCoordByteOffset = 40;
+
+        /// Video owner consulted before GPU allocation retirement.
+        Ps3Video* VideoValue;
+
+        /// Uploaded mesh allocations retained beyond Core model disposal.
+        std::vector<Ps3MeshBuffers> UploadedMeshes;
+
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        /// Source-isolated caches whose GPU allocations survive Core disposal.
+        std::vector<std::unique_ptr<Ps3AuthoredContentCache>> ContentCaches;
+#endif
 
         /// RSX command context borrowed from the video owner.
         gcmContextData* ContextValue;

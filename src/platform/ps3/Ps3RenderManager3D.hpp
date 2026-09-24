@@ -16,15 +16,9 @@ namespace helengine::ps3 {
     class Ps3RasterRenderer;
     class Ps3Video;
 
-    /// Minimal 3D render manager for the v0.2 Core boot gate.
-    ///
-    /// The gate runs Core against an empty scene to prove the lifecycle, so this adapter
-    /// accepts being driven and draws nothing. Every request that would require real
-    /// rendering resources raises instead of returning a null or empty object, because a
-    /// silent failure here would surface much later as an unexplained blank frame.
-    ///
-    /// Only `BuildModelFromRaw` is abstract on the generated base; the overrides below are
-    /// the subset the gate actually needs to control.
+    /// Bridges Core scene data to the authored P3MT/P3SP standard draw path.
+    /// GPU resources remain in the renderer until successful drain, beyond Core disposal.
+    /// The initial profile supports one whole-model submesh, opaque material and basic lighting.
     class Ps3RenderManager3D final : public ::RenderManager3D, public ::IRenderVisitor3D {
     public:
         /// Creates an adapter bound to the video owner and raster renderer it draws through.
@@ -48,33 +42,32 @@ namespace helengine::ps3 {
         /// calls the 2D manager for the empty scene this gate runs.
         void ArmDeliberateRaise();
 
-        /// Records the draw request and presents nothing, or raises when armed. The boot
-        /// gate's visible output is the v0.1 cube, drawn independently of Core.
+        /// Collects the first camera and supported scene lighting, then visits its ordered drawables.
         void Draw() override;
 
-        /// Builds a renderer material from one cooked platform payload.
+        /// Rejects legacy material payloads that cannot identify an authored shader pair.
         /// @param materialAsset Cooked material Core is asking to realize.
-        /// @return An owned material carrying the cooked base colour.
+        /// @return Never returns normally for legacy payloads.
         ::RuntimeMaterial* BuildMaterialFromCooked(::PlatformMaterialAsset* materialAsset) override;
 
         /// Reads one cooked material from content and realizes it.
         /// @param cookedAssetPath Content-relative path to the cooked material.
         /// @param contentStreamSource Source the path is resolved against.
-        /// @return An owned material carrying the cooked base colour.
+        /// @return An owned P3MT material borrowing fully realized cache resources.
         ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
 
         /// Reads one cooked model from content and realizes it.
         /// @param cookedAssetPath Content-relative path to the cooked model.
         /// @param contentStreamSource Source the path is resolved against.
-        /// @return An owned model, currently without GPU geometry.
+        /// @return An owned Core model borrowing uploaded geometry retained by the renderer.
         ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
 
-        /// Refuses model construction, which belongs to the authored scene milestone.
+        /// Copies indexed positions, normals and UVs and retains source validity.
         /// @param data Raw model asset Core is asking to realize.
-        /// @return Never returns normally.
+        /// @return An owned model with validated whole-model submesh metadata.
         ::RuntimeModel* BuildModelFromRaw(::ModelAsset* data) override;
 
-        /// Releases nothing, because this adapter never hands out models.
+        /// Reports disposal without freeing resources that may still be referenced by RSX.
         void Dispose() override;
 
     private:
@@ -86,9 +79,6 @@ namespace helengine::ps3 {
 
         /// Whether the build asked the next draw to raise, for the unwinding gate.
         bool RaiseOnDraw;
-
-        /// Whether the first cooked material has been reported.
-        bool LoggedFirstMaterial;
 
         /// Whether the first cooked model has been reported.
         bool LoggedFirstModel;
@@ -135,6 +125,12 @@ namespace helengine::ps3 {
 
         /// World-space direction of travel for the active directional light.
         float DirectionalDirection[4];
+
+        /// World position of the active camera, supplied before visiting drawables.
+        float CameraPosition[4];
+
+        /// Distinguishes an absent directional light from an authored zero-intensity light.
+        bool HasDirectionalLight;
 
         /// Reads one cooked asset through the content source and reports a clear reason on failure.
         /// @param cookedAssetPath Content-relative path to the cooked asset.

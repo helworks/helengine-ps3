@@ -1070,6 +1070,42 @@ void TestUnmappedNonInternalSdkConstant() {
         "vertex SDK constant group " + generatedName + " has an unmapped non-internal element");
 }
 
+/// Removes only one P3SP input mapping, retaining the complete raw SDK vertex program.
+void TestUnmappedSdkVertexInput() {
+    std::vector<std::uint8_t> bytes = Artifact;
+    const WireLayout layout = ParseWireLayout(bytes);
+    Require(!layout.Attributes.empty(), "fixture has no vertex input mapping to remove");
+    const AttributeField& mapping = layout.Attributes.front();
+    const std::string name = mapping.GeneratedName.Value;
+    const std::vector<std::uint8_t> sdk(bytes.begin() + layout.Stages[0].Blob,
+        bytes.begin() + layout.Stages[0].BlobEnd);
+    bytes.erase(bytes.begin() + mapping.Begin, bytes.begin() + mapping.End);
+    WriteU32At(bytes, layout.AttributeCount, static_cast<std::uint32_t>(layout.Attributes.size() - 1u));
+    UpdateArtifactTotal(bytes);
+    const WireLayout changed = ParseWireLayout(bytes);
+    Require(std::vector<std::uint8_t>(bytes.begin() + changed.Stages[0].Blob,
+        bytes.begin() + changed.Stages[0].BlobEnd) == sdk, "vertex mapping removal changed SDK bytes");
+    RequireRejectedWithError(bytes, "vertex SDK input " + name + " has no artifact mapping");
+}
+
+/// Removes only one P3SP sampler mapping, retaining the complete raw SDK pixel program.
+void TestUnmappedSdkPixelSampler() {
+    std::vector<std::uint8_t> bytes = Artifact;
+    const WireLayout layout = ParseWireLayout(bytes);
+    Require(!layout.Samplers.empty(), "fixture has no pixel sampler mapping to remove");
+    const SamplerField& mapping = layout.Samplers.front();
+    const std::string name = mapping.GeneratedName.Value;
+    const std::vector<std::uint8_t> sdk(bytes.begin() + layout.Stages[1].Blob,
+        bytes.begin() + layout.Stages[1].BlobEnd);
+    bytes.erase(bytes.begin() + mapping.Begin, bytes.begin() + mapping.End);
+    WriteU32At(bytes, layout.SamplerCount, static_cast<std::uint32_t>(layout.Samplers.size() - 1u));
+    UpdateArtifactTotal(bytes);
+    const WireLayout changed = ParseWireLayout(bytes);
+    Require(std::vector<std::uint8_t>(bytes.begin() + changed.Stages[1].Blob,
+        bytes.begin() + changed.Stages[1].BlobEnd) == sdk, "sampler mapping removal changed SDK bytes");
+    RequireRejectedWithError(bytes, "pixel SDK sampler " + name + " has no artifact mapping");
+}
+
 void TestFragmentRelocationOutOfBounds() {
     std::vector<std::uint8_t> bytes = AddInternalFragmentConstants(Artifact, {{32u}});
     RequireRejectedWithError(bytes, "fragment relocation does not reference a complete aligned constant write in microcode");
@@ -1177,6 +1213,8 @@ int main() {
     RunCase("mismatched-sdk-type", TestMismatchedSdkType);
     RunCase("mismatched-sdk-index", TestMismatchedSdkIndex);
     RunCase("unmapped-non-internal-sdk-constant", TestUnmappedNonInternalSdkConstant);
+    RunCase("unmapped-sdk-vertex-input", TestUnmappedSdkVertexInput);
+    RunCase("unmapped-sdk-pixel-sampler", TestUnmappedSdkPixelSampler);
     RunCase("fragment-relocation-out-of-bounds", TestFragmentRelocationOutOfBounds);
     RunCase("fragment-relocation-full-width-overflow", TestFragmentFullWidthOverflow);
     RunCase("same-element-duplicate-relocations", TestRepeatedRelocationsWithinOneElement);

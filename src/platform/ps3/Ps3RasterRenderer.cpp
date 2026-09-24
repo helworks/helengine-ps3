@@ -2,6 +2,18 @@
 
 #include <cstdio>
 #include <cstring>
+#include <array>
+#include <cmath>
+#include <limits>
+
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+#include "platform/ps3/Ps3AuthoredContentCache.hpp"
+#include "platform/ps3/Ps3AuthoredProgram.hpp"
+#include "platform/ps3/Ps3AuthoredTexture.hpp"
+#include "platform/ps3/Ps3MaterialArtifactReader.hpp"
+#include "platform/ps3/Ps3RuntimeMaterial.hpp"
+#include "platform/ps3/Ps3StandardUniformProvider.hpp"
+#endif
 
 #include <ppu-types.h>
 #include <rsx/rsx.h>
@@ -17,7 +29,8 @@
 
 namespace helengine::ps3 {
     Ps3RasterRenderer::Ps3RasterRenderer()
-        : ContextValue(nullptr)
+        : VideoValue(nullptr)
+        , ContextValue(nullptr)
         , VertexProgram(nullptr)
         , VertexUcode(nullptr)
         , VertexUcodeBytes(0)
@@ -46,11 +59,15 @@ namespace helengine::ps3 {
         , Initialized(false) {
     }
 
+    /// CPU destruction never implicitly retires queued GPU resources.
+    Ps3RasterRenderer::~Ps3RasterRenderer() = default;
+
     bool Ps3RasterRenderer::Initialize(Ps3Video& video) {
         if (Initialized) {
             std::printf("PS3_RENDERER_ERROR stage=initialize reason=already-initialized\n");
             return false;
         }
+        VideoValue = &video;
         ContextValue = video.Context();
         if (ContextValue == nullptr) {
             std::printf("PS3_RENDERER_ERROR stage=context reason=video-not-initialized\n");
@@ -220,6 +237,23 @@ namespace helengine::ps3 {
             return false;
         }
 
+        const std::uint64_t requiredBytes = static_cast<std::uint64_t>(vertexCount) * sizeof(Ps3Vertex) +
+            static_cast<std::uint64_t>(indexCount) * (uses32BitIndices ? 4u : 2u);
+        if (VideoValue == nullptr || VideoValue->HasDrained() ||
+            requiredBytes > std::numeric_limits<u32>::max() - OwnedBytesValue) {
+            std::printf("PS3_MESH_ERROR stage=upload reason=retired-or-size-overflow\n");
+            return false;
+        }
+        for (u32 index = 0; index < indexCount; ++index) {
+            const u32 value = uses32BitIndices ? static_cast<const u32*>(indices)[index] :
+                static_cast<const u16*>(indices)[index];
+            if (value >= vertexCount) {
+                std::printf("PS3_MESH_ERROR stage=upload reason=index-out-of-range index=%u value=%u\n", index, value);
+                return false;
+            }
+        }
+        // Reserve bookkeeping before acquiring GPU memory, so publication cannot allocate.
+        UploadedMeshes.reserve(UploadedMeshes.size() + 1);
         const u32 vertexBytes = vertexCount * static_cast<u32>(sizeof(Ps3Vertex));
         const u32 indexBytes = indexCount * (uses32BitIndices ? 4u : 2u);
         void* vertexBuffer = rsxMemalign(GeometryAlignment, vertexBytes);
@@ -250,18 +284,31 @@ namespace helengine::ps3 {
         std::memcpy(vertexBuffer, vertices, vertexBytes);
         std::memcpy(indexBuffer, indices, indexBytes);
         buffers = Ps3MeshBuffers{ vertexBuffer, vertexOffset, indexBuffer, indexOffset, indexCount, uses32BitIndices, vertexBytes + indexBytes };
+        UploadedMeshes.push_back(buffers);
+        OwnedBytesValue += buffers.OwnedBytes;
         std::printf("PS3_MESH_UPLOADED vertices=%u indices=%u indexBits=%u bytes=%u\n", vertexCount, indexCount, uses32BitIndices ? 32u : 16u, buffers.OwnedBytes);
         return true;
     }
 
     void Ps3RasterRenderer::ReleaseMesh(Ps3MeshBuffers& buffers) {
-        if (buffers.IndexBuffer != nullptr) {
-            rsxFree(buffers.IndexBuffer);
+        if (buffers.VertexBuffer == nullptr && buffers.IndexBuffer == nullptr) {
+            return;
         }
-        if (buffers.VertexBuffer != nullptr) {
-            rsxFree(buffers.VertexBuffer);
+        if (VideoValue == nullptr || !VideoValue->HasDrained()) {
+            std::printf("PS3_MESH_ERROR stage=release reason=video-not-drained\n");
+            return;
         }
-        buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, false, 0 };
+        for (auto mesh = UploadedMeshes.begin(); mesh != UploadedMeshes.end(); ++mesh) {
+            if (mesh->VertexBuffer == buffers.VertexBuffer && mesh->IndexBuffer == buffers.IndexBuffer) {
+                rsxFree(mesh->IndexBuffer);
+                rsxFree(mesh->VertexBuffer);
+                OwnedBytesValue -= mesh->OwnedBytes;
+                UploadedMeshes.erase(mesh);
+                buffers = Ps3MeshBuffers{ nullptr, 0, nullptr, 0, 0, false, 0 };
+                return;
+            }
+        }
+        std::printf("PS3_MESH_ERROR stage=release reason=unregistered-mesh\n");
     }
 
     bool Ps3RasterRenderer::DrawIndexed(const Ps3MeshBuffers& buffers, const Ps3Matrix4& modelViewProjection,
@@ -306,7 +353,165 @@ namespace helengine::ps3 {
         return true;
     }
 
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+    /// Publishes a source-isolated cache before any GPU resource can be acquired.
+    Ps3RuntimeMaterial* Ps3RasterRenderer::BuildAuthoredMaterial(
+        const std::string& path, ::IContentStreamSource& source, std::string& error) {
+        if (!Initialized || VideoValue == nullptr || VideoValue->HasDrained()) {
+            error = "authored material requires an initialized, undrained renderer";
+            return nullptr;
+        }
+        for (const auto& cache : ContentCaches) {
+            if (cache->MatchesSource(source)) return cache->BuildMaterial(path, error);
+        }
+        ContentCaches.emplace_back(std::make_unique<Ps3AuthoredContentCache>(*VideoValue, source));
+        return ContentCaches.back()->BuildMaterial(path, error);
+    }
+
+    /// Resolves the entire CPU binding contract before emitting authored draw commands.
+    bool Ps3RasterRenderer::DrawAuthored(const Ps3MeshBuffers& buffers,
+        const Ps3RuntimeMaterial& material, const Ps3StandardDrawData& draw, std::string& error) {
+        error.clear();
+        if (!Initialized || VideoValue == nullptr || VideoValue->HasDrained() ||
+            buffers.VertexBuffer == nullptr || buffers.IndexBuffer == nullptr ||
+            buffers.IndexCount == 0 || buffers.IndexCount % 3 != 0 ||
+            material.Program == nullptr || material.Program->OwnedGpuBytes() == 0) {
+            error = "authored draw requires live renderer, triangle mesh and program";
+            return false;
+        }
+        const float* groups[] = {draw.World.Values, draw.WorldViewProjection.Values, draw.NormalMatrix.Values,
+            draw.CameraPosition, draw.BaseColor, draw.AmbientLight, draw.DirectionalColor, draw.DirectionalDirection};
+        for (std::size_t group = 0; group < 8; ++group) {
+            for (std::size_t index = 0; index < (group < 3 ? 16u : 4u); ++index) {
+                if (!std::isfinite(groups[group][index])) {
+                    error = "authored draw contains nonfinite matrix, camera, color or light data";
+                    return false;
+                }
+            }
+        }
+        const auto& program = material.Program->Program();
+        if (!Ps3MaterialArtifactReader::MatchesProgram(material.Material, program, error)) return false;
+        if (draw.Lit != material.IsLit() || draw.DoubleSided != material.IsDoubleSided() ||
+            draw.BaseColor[0] != static_cast<float>(material.Material.BaseColorR) / 255.0f ||
+            draw.BaseColor[1] != static_cast<float>(material.Material.BaseColorG) / 255.0f ||
+            draw.BaseColor[2] != static_cast<float>(material.Material.BaseColorB) / 255.0f ||
+            draw.BaseColor[3] != static_cast<float>(material.Material.BaseColorA) / 255.0f) {
+            error = "authored draw does not preserve P3MT color/surface flags";
+            return false;
+        }
+        std::vector<u32> attributeOffsets;
+        attributeOffsets.reserve(program.Attributes.size());
+        for (const auto& attribute : program.Attributes) {
+            const bool position = attribute.FullAuthoredSemantic == "POSITION";
+            const bool normal = attribute.FullAuthoredSemantic == "NORMAL";
+            const bool uv = attribute.FullAuthoredSemantic == "TEXCOORD0";
+            if ((!position && !normal && !uv) || attribute.ScalarType != "FP3232" ||
+                attribute.VectorWidth != (uv ? 2u : 3u) || attribute.Columns != 1 ||
+                attribute.ArrayLength != 1 || attribute.HardwareSlot > 15) {
+                error = "unsupported authored vertex semantic/shape: " + attribute.FullAuthoredSemantic;
+                return false;
+            }
+            attributeOffsets.push_back(position ? PositionByteOffset : normal ? NormalByteOffset : TexCoordByteOffset);
+        }
+        std::vector<Ps3AuthoredTexture*> samplerTextures;
+        samplerTextures.reserve(program.PixelSamplers.size());
+        for (const auto& sampler : program.PixelSamplers) {
+            Ps3AuthoredTexture* texture = nullptr;
+            if (sampler.TextureName == "DiffuseTexture" && sampler.TextureBinding == 0 &&
+                sampler.SamplerName == "DiffuseTextureSampler" && sampler.SamplerBinding == 0 &&
+                sampler.Dimension == "Dim2D") texture = material.DiffuseTexture;
+            else if (sampler.TextureName == "RoughnessTexture" && sampler.TextureBinding == 6 &&
+                sampler.SamplerName == "RoughnessTextureSampler" && sampler.SamplerBinding == 6 &&
+                sampler.Dimension == "Dim2D") texture = material.RoughnessTexture;
+            else if (sampler.TextureName == "EmissiveTexture" && sampler.TextureBinding == 7 &&
+                sampler.SamplerName == "EmissiveTextureSampler" && sampler.SamplerBinding == 7 &&
+                sampler.Dimension == "Dim2D") texture = material.EmissiveTexture;
+            else if (sampler.TextureName == "shadowAtlasTexture" && sampler.TextureBinding == 1 &&
+                sampler.SamplerName == "shadowAtlasSampler" && sampler.SamplerBinding == 1 &&
+                sampler.Dimension == "Dim2D") texture = material.ShadowAtlasTexture;
+            else if (sampler.SamplerName == "pointShadowSampler" && sampler.SamplerBinding == 2 &&
+                sampler.Dimension == "DimCube" && sampler.TextureBinding >= 2 && sampler.TextureBinding <= 5 &&
+                sampler.TextureName == "pointShadowTexture" + std::to_string(sampler.TextureBinding - 2))
+                texture = material.PointShadowTexture;
+            if (texture == nullptr || texture->OwnedGpuBytes() == 0 || sampler.TextureUnit > 15) {
+                error = "unsupported or unrealized authored sampler: " + sampler.TextureName + "/" + sampler.SamplerName;
+                return false;
+            }
+            samplerTextures.push_back(texture);
+        }
+        // Values remain live through both uploads; no provider failure can occur after BeginDraw.
+        std::vector<std::array<float, 16>> vertexValues(program.Vertex.Uniforms.size());
+        std::vector<std::array<float, 16>> pixelValues(program.Pixel.Uniforms.size());
+        std::vector<std::size_t> vertexCounts(vertexValues.size());
+        std::vector<std::size_t> pixelCounts(pixelValues.size());
+        for (std::size_t index = 0; index < vertexValues.size(); ++index) {
+            if (!Ps3StandardUniformProvider::Resolve(program.Vertex.Uniforms[index], draw,
+                vertexValues[index].data(), 16, vertexCounts[index], error)) return false;
+        }
+        for (std::size_t index = 0; index < pixelValues.size(); ++index) {
+            if (!Ps3StandardUniformProvider::Resolve(program.Pixel.Uniforms[index], draw,
+                pixelValues[index].data(), 16, pixelCounts[index], error)) return false;
+        }
+        if (!material.Program->BeginDraw(error)) return false;
+        for (std::size_t index = 0; index < program.Attributes.size(); ++index) {
+            const auto& attribute = program.Attributes[index];
+            rsxBindVertexArrayAttrib(ContextValue, static_cast<u8>(attribute.HardwareSlot), 0,
+                buffers.VertexBufferOffset + attributeOffsets[index], VertexStride,
+                static_cast<u8>(attribute.VectorWidth), GCM_VERTEX_DATA_TYPE_F32, GCM_LOCATION_RSX);
+        }
+        for (std::size_t index = 0; index < vertexValues.size(); ++index) {
+            if (!material.Program->UploadUniform(program.Vertex.Stage, index,
+                vertexValues[index].data(), vertexCounts[index], error)) return false;
+        }
+        for (std::size_t index = 0; index < pixelValues.size(); ++index) {
+            if (!material.Program->UploadUniform(program.Pixel.Stage, index,
+                pixelValues[index].data(), pixelCounts[index], error)) return false;
+        }
+        for (std::size_t index = 0; index < samplerTextures.size(); ++index) {
+            if (!samplerTextures[index]->Bind(program.PixelSamplers[index].TextureUnit, error)) return false;
+        }
+        if (!material.Program->FinishUniformUpdates(error)) return false;
+        rsxSetDepthTestEnable(ContextValue, GCM_TRUE);
+        rsxSetDepthFunc(ContextValue, GCM_LESS);
+        rsxSetDepthWriteEnable(ContextValue, GCM_TRUE);
+        rsxSetBlendEnable(ContextValue, GCM_FALSE);
+        rsxSetShadeModel(ContextValue, GCM_SHADE_MODEL_SMOOTH);
+        rsxSetFrontFace(ContextValue, GCM_FRONTFACE_CCW);
+        rsxSetCullFace(ContextValue, GCM_CULL_BACK);
+        rsxSetCullFaceEnable(ContextValue, draw.DoubleSided ? GCM_FALSE : GCM_TRUE);
+        rsxSetUserClipPlaneControl(ContextValue, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE,
+            GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE);
+        rsxDrawIndexArray(ContextValue, GCM_TYPE_TRIANGLES, buffers.IndexBufferOffset, buffers.IndexCount,
+            buffers.Uses32BitIndices ? GCM_INDEX_TYPE_32B : GCM_INDEX_TYPE_16B, GCM_LOCATION_RSX);
+        ++DrawCounter;
+        if (DrawCounter == 1) {
+            std::printf("PS3_AUTHORED_DRAW shader=%s variant=%s hash=%s attributes=%lu vertexUniforms=%lu pixelUniforms=%lu samplers=%lu indices=%u\n",
+                program.ShaderAssetId.c_str(), program.VariantName.c_str(), program.SourceHash.c_str(),
+                static_cast<unsigned long>(program.Attributes.size()), static_cast<unsigned long>(vertexValues.size()),
+                static_cast<unsigned long>(pixelValues.size()), static_cast<unsigned long>(samplerTextures.size()), buffers.IndexCount);
+        }
+        return true;
+    }
+#endif
+
     void Ps3RasterRenderer::Shutdown() {
+        if (VideoValue == nullptr || !VideoValue->HasDrained()) {
+            std::printf("PS3_RENDERER_ERROR stage=shutdown reason=video-not-drained\n");
+            return;
+        }
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        for (auto& cache : ContentCaches) {
+            std::string error;
+            if (!cache->ShutdownAfterDrain(error)) {
+                std::printf("PS3_RENDERER_ERROR stage=cache-shutdown reason=%s\n", error.c_str());
+                return;
+            }
+        }
+#endif
+        while (!UploadedMeshes.empty()) {
+            Ps3MeshBuffers mesh = UploadedMeshes.back();
+            ReleaseMesh(mesh);
+        }
         u32 freedBytes = 0;
         if (IndexBuffer != nullptr) {
             rsxFree(IndexBuffer);
@@ -329,7 +534,11 @@ namespace helengine::ps3 {
     }
 
     unsigned Ps3RasterRenderer::OwnedBytes() const {
-        return OwnedBytesValue;
+        std::size_t bytes = OwnedBytesValue;
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        for (const auto& cache : ContentCaches) bytes += cache->OwnedGpuBytes();
+#endif
+        return static_cast<unsigned>(bytes);
     }
 
     unsigned Ps3RasterRenderer::DrawCount() const {

@@ -14,7 +14,8 @@ namespace helengine::ps3 {
             return Ps3Vertex{
                 { nx + uSign * ux + vSign * vx, ny + uSign * uy + vSign * vy, nz + uSign * uz + vSign * vz },
                 { nx, ny, nz },
-                { r, g, b, 1.0f }
+                { r, g, b, 1.0f },
+                { (uSign + 1.0f) * 0.5f, (vSign + 1.0f) * 0.5f }
             };
         }
 

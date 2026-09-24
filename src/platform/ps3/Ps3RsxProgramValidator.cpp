@@ -548,6 +548,11 @@ void ValidateAttributes(const Ps3CookedShaderProgram& program, const Ps3RsxProgr
         }
         if (IsSamplerType(entry->DataType)) throw std::runtime_error("vertex attribute mapping resolved to an SDK sampler");
     }
+    for (const Ps3RsxAttributeEntry& entry : sdk.Attributes) {
+        if (!IsSamplerType(entry.DataType) && generatedNames.count(entry.Name) == 0u) {
+            throw std::runtime_error("vertex SDK input " + entry.Name + " has no artifact mapping");
+        }
+    }
 }
 
 /// <summary>Checks authored pixel samplers against exact SDK sampler names, types, dimensions, and units.</summary>
@@ -573,6 +578,11 @@ void ValidateSamplers(const Ps3CookedShaderProgram& program, const Ps3RsxProgram
         if (entry == nullptr) throw std::runtime_error("pixel sampler generated name is missing from SDK attributes");
         if (entry->DataType != sampler.SdkDataType || entry->Index != sampler.TextureUnit || !IsSamplerType(entry->DataType)) {
             throw std::runtime_error("pixel sampler SDK type or physical unit disagrees with its SDK record");
+        }
+    }
+    for (const Ps3RsxAttributeEntry& entry : sdk.Attributes) {
+        if (IsSamplerType(entry.DataType) && generatedNames.count(entry.Name) == 0u) {
+            throw std::runtime_error("pixel SDK sampler " + entry.Name + " has no artifact mapping");
         }
     }
 }
