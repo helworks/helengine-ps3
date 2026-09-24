@@ -93,8 +93,8 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder, IPlatformSh
     }
 
     /// <summary>
-    /// Stages the declared cooked content, writes the runtime scene catalog beside generated
-    /// Core, then compiles both into the native executable.
+    /// Stages the declared cooked content, writes runtime scene and renderer shader catalogs
+    /// beside generated Core, then compiles them into the native executable.
     /// </summary>
     /// <param name="request">Resolved graph build request.</param>
     /// <param name="progressReporter">Progress callback.</param>
@@ -137,6 +137,7 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder, IPlatformSh
                 stagingRoot,
                 cancellationToken);
             new Ps3StartupManifestWriter().Write(request.GeneratedCoreCppRootPath, request.Manifest);
+            new Ps3RendererShaderManifestWriter().Write(request.GeneratedCoreCppRootPath, request.Manifest);
             progressReporter.Report(new PlatformBuildProgressUpdate("Stage Content", "manifest", 1, 1, $"Staged {staged.Count} cooked artifacts."));
 
             progressReporter.Report(new PlatformBuildProgressUpdate("Build Native SELF", "ps3", 0, 1, "Preparing the PlayStation 3 native executor."));
