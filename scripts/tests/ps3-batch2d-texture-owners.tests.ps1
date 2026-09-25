@@ -21,6 +21,22 @@ function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Test-FreshOwnerTtyEvidence {
+    param(
+        [Parameter(Mandatory)][string]$CapturedHash,
+        [Parameter(Mandatory)][string]$CurrentHash,
+        [Parameter(Mandatory)][datetime]$CurrentTtyLastWriteUtc,
+        [Parameter(Mandatory)][datetime]$LaunchStartedUtc,
+        [Parameter(Mandatory)][string]$BuildId,
+        [Parameter(Mandatory)][string]$RunRecord
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BuildId) -or $CapturedHash -ne $CurrentHash) { return $false }
+    if ($CurrentTtyLastWriteUtc -lt $LaunchStartedUtc.AddSeconds(-2)) { return $false }
+    $buildRecordPattern = '(?m)^BuildId=' + [regex]::Escape($BuildId) + '\s*$'
+    return $RunRecord -match $buildRecordPattern -and $RunRecord -match '(?m)^Visible=True\s*$'
+}
+
 function Get-GeneratedAggregate([string]$Root) {
     $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
     $records = foreach ($file in (Get-ChildItem -LiteralPath $rootPath -File -Recurse | Sort-Object FullName)) {
@@ -70,6 +86,17 @@ if (-not (Test-Path -LiteralPath $buildParent -PathType Container)) { New-Item -
 $buildId = 'texture-owners-' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $buildRoot = Join-Path $buildParent $buildId
 New-Item -ItemType Directory -Path $buildRoot -ErrorAction Stop | Out-Null
+$temporaryRoot = Join-Path $buildRoot 'temp'
+New-Item -ItemType Directory -Path $temporaryRoot -ErrorAction Stop | Out-Null
+$oldTemporaryEnvironment = @{}
+foreach ($name in @('TEMP', 'TMP', 'TMPDIR', 'DockerTMPDIR')) {
+    $oldTemporaryEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+
+try {
+foreach ($name in @('TEMP', 'TMP', 'TMPDIR', 'DockerTMPDIR')) {
+    [Environment]::SetEnvironmentVariable($name, $temporaryRoot, 'Process')
+}
 $logPath = Join-Path $buildRoot 'build.log'
 $sourceRelativePaths = @(
     'src/platform/ps3/Ps3RuntimeTexture.hpp',
@@ -103,7 +130,8 @@ $dockerArguments = @(
     'run', '--rm', '--pull=never', '--network', 'none',
     '--mount', "type=bind,source=$repoRoot,target=/src,readonly",
     '--mount', "type=bind,source=$buildRoot,target=/out",
-    '--mount', "type=bind,source=$generatedRoot,target=/generated,readonly"
+    '--mount', "type=bind,source=$generatedRoot,target=/generated,readonly",
+    '--env', 'TMPDIR=/out/temp', '--env', 'TMP=/out/temp', '--env', 'TEMP=/out/temp', '--env', 'DockerTMPDIR=/out/temp'
 )
 if (-not $Red) { $dockerArguments += @('--mount', "type=bind,source=$standardRoot,target=/standard,readonly") }
 $dockerArguments += @($lockedImageId, 'make', '-f', '/src/tests/Makefile.batch2d-texture-owners', $target, 'SRC_ROOT=/src', 'BUILD_ROOT=/out')
@@ -175,7 +203,6 @@ if ($Visible) {
     if ([string]::IsNullOrWhiteSpace($RpcS3Path)) { throw 'Visible mode requires the parent-coordinated RPCS3 executable path.' }
     if (@(Get-Process -Name rpcs3 -ErrorAction SilentlyContinue).Count -ne 0) { throw 'RPCS3 is already running; refusing a concurrent launch.' }
     $emulatorLogPath = Join-Path (Split-Path -Parent $RpcS3Path) 'log\TTY.log'
-    $oldTtyHash = if (Test-Path -LiteralPath $emulatorLogPath -PathType Leaf) { Get-Sha256 $emulatorLogPath } else { '' }
     $launchStartedUtc = [DateTime]::UtcNow
     $launcher = Join-Path $repoRoot 'scripts\launch_in_emulator.ps1'
     & $launcher -ArtifactPath (Join-Path $buildRoot 'ps3_batch2d_texture_owners_tests.self') -OutputRoot $buildParent -RpcS3Path $RpcS3Path -Visible
@@ -184,19 +211,16 @@ if ($Visible) {
     if ($runRoots.Count -ne 1) { throw "Fresh owner fixture must contain exactly one emulator run; found $($runRoots.Count)" }
     $runRoot = $runRoots[0].FullName
     $runRecord = Get-Content -LiteralPath (Join-Path $runRoot 'emulator-command.txt') -Raw -Encoding UTF8
-    if ($runRecord -notmatch [regex]::Escape("BuildId=$buildId") -or $runRecord -notmatch 'Visible=True') {
-        throw "Launcher run record does not identify this fresh visible build: $runRoot"
-    }
     $ttyPath = Join-Path $runRoot 'TTY.log'
     if (-not (Test-Path -LiteralPath $ttyPath -PathType Leaf) -or -not (Test-Path -LiteralPath $emulatorLogPath -PathType Leaf)) {
         throw 'Fresh RPCS3 TTY output is absent from the run directory or emulator log root.'
     }
-    if ((Get-Item -LiteralPath $emulatorLogPath).LastWriteTimeUtc -lt $launchStartedUtc.AddSeconds(-2)) {
-        throw 'RPCS3 TTY log timestamp predates this visible run.'
-    }
     $ttyHash = Get-Sha256 $ttyPath
-    if ($ttyHash -ne (Get-Sha256 $emulatorLogPath) -or ($oldTtyHash -and $ttyHash -eq $oldTtyHash)) {
-        throw 'Captured TTY does not match fresh emulator output or is byte-identical to the prior log.'
+    $currentTty = Get-Item -LiteralPath $emulatorLogPath
+    if (-not (Test-FreshOwnerTtyEvidence -CapturedHash $ttyHash -CurrentHash (Get-Sha256 $emulatorLogPath) `
+        -CurrentTtyLastWriteUtc $currentTty.LastWriteTimeUtc -LaunchStartedUtc $launchStartedUtc `
+        -BuildId $buildId -RunRecord $runRecord)) {
+        throw 'Captured TTY is stale or does not match the current run timestamp, hash, and unique visible build record.'
     }
     $ttyText = Get-Content -LiteralPath $ttyPath -Raw
     $summaries = [regex]::Matches($ttyText, '(?m)^PS3_BATCH2D_TEXTURE_OWNERS_TESTS passed=(\d+) failed=0\s*$')
@@ -212,4 +236,9 @@ if ($Visible) {
     Write-Output "FixtureTty=$ttyPath"
     Write-Output "FixtureTtySha256=$ttyHash"
     Write-Output "FixtureAssertions=$expectedAssertions"
+}
+} finally {
+    foreach ($name in @('TEMP', 'TMP', 'TMPDIR', 'DockerTMPDIR')) {
+        [Environment]::SetEnvironmentVariable($name, $oldTemporaryEnvironment[$name], 'Process')
+    }
 }
