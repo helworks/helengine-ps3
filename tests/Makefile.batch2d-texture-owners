@@ -1,0 +1,52 @@
+# Focused native fixture for renderer-owned Core texture wrappers.
+# Source/generated inputs are mounted read-only; all compilation output goes to /out.
+
+.SUFFIXES:
+
+ifeq ($(strip $(PSL1GHT)),)
+$(error PSL1GHT must be set by the pinned helengine-ps3-sdk image)
+endif
+ifneq ($(SRC_ROOT),/src)
+$(error SRC_ROOT must be /src in the read-only repository mount)
+endif
+ifneq ($(BUILD_ROOT),/out)
+$(error BUILD_ROOT must be /out in the writable visible build root)
+endif
+
+include $(PSL1GHT)/ppu_rules
+
+OBJECT_ROOT := $(BUILD_ROOT)/obj
+TEST_SOURCE := $(SRC_ROOT)/tests/ps3_batch2d_texture_owners_tests.cpp
+SOURCES := \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RuntimeTexture.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DResources.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredTexture.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3ContentStreamSource.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Video.cpp \
+	$(TEST_SOURCE)
+OBJECTS := $(patsubst $(SRC_ROOT)/%.cpp,$(OBJECT_ROOT)/%.o,$(SOURCES))
+CORE_OBJECT := /standard/obj/generated/helengine_core_unity.o
+CXXFLAGS := -std=c++20 -Wall -Wextra -Werror -DHELENGINE_PS3_HAS_GENERATED_CORE -O2 -g -mcpu=cell $(MACHDEP) $(LIBPSL1GHT_INC) -I$(SRC_ROOT)/src -I$(SRC_ROOT)/tests -I/generated
+LIBS := -lrsx -lgcm_sys -lsysutil -lrt -llv2 -lm
+
+.PHONY: red all
+red:
+	$(CXX) $(CXXFLAGS) -fsyntax-only $(TEST_SOURCE)
+
+all: $(BUILD_ROOT)/ps3_batch2d_texture_owners_tests.self
+
+$(OBJECT_ROOT)/%.o: $(SRC_ROOT)/%.cpp
+	@mkdir -p "$(dir $@)"
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MT "$@" -c "$<" -o "$@"
+
+$(BUILD_ROOT)/ps3_batch2d_texture_owners_tests.elf: $(OBJECTS) $(CORE_OBJECT)
+	$(CXX) $(OBJECTS) $(CORE_OBJECT) $(MACHDEP) $(LIBPSL1GHT_LIB) $(LIBS) -o "$@"
+
+$(BUILD_ROOT)/ps3_batch2d_texture_owners_tests.self: $(BUILD_ROOT)/ps3_batch2d_texture_owners_tests.elf
+	@mkdir -p "$(BUILD_ROOT)/self-stage"
+	$(STRIP) "$<" -o "$(BUILD_ROOT)/self-stage/ps3_batch2d_texture_owners_tests.elf"
+	$(SPRX) "$(BUILD_ROOT)/self-stage/ps3_batch2d_texture_owners_tests.elf"
+	$(SELF) "$(BUILD_ROOT)/self-stage/ps3_batch2d_texture_owners_tests.elf" "$@"
+	$(FSELF) "$(BUILD_ROOT)/self-stage/ps3_batch2d_texture_owners_tests.elf" "$(BUILD_ROOT)/ps3_batch2d_texture_owners_tests.fake.self"
+
+-include $(OBJECTS:.o=.d)
