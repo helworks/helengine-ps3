@@ -20,7 +20,8 @@ param(
     [Parameter(Mandatory)][string]$ArtifactPath,
     [string]$RpcS3Path = $env:HELENGINE_PS3_RPCS3_PATH,
     [switch]$Visible,
-    [string]$OutputRoot = ''
+    [string]$OutputRoot = '',
+    [switch]$SynchronousShaders
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,6 +36,23 @@ $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 function Get-FileSha256 {
     param([string]$Path)
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-Rpcs3RunConfigLines {
+    param([switch]$SynchronousShaders)
+
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('Video:')
+    $lines.Add('  Write Color Buffers: true')
+    if ($SynchronousShaders) {
+        $lines.Add('  Shader Mode: Legacy Recompiler (single-threaded)')
+    }
+    $lines.Add('Miscellaneous:')
+    $lines.Add('  Exit RPCS3 when process finishes: true')
+    $lines.Add('  Start games in fullscreen mode: false')
+    $lines.Add('  Show shader compilation hint: false')
+    $lines.Add('  Show PPU compilation hint: false')
+    return $lines.ToArray()
 }
 
 # --- Artifact containment and manifest identity ---------------------------------------
@@ -101,15 +119,7 @@ $stderrPath = Join-Path $runRoot 'emulator-stderr.log'
 # buffers into guest memory so the host's diagnostic pixel probe can read them. It
 # applies to this CLI boot only; the emulator's own config.yml is never touched.
 $runConfigPath = Join-Path $runRoot 'rpcs3-run-config.yml'
-Set-Content -LiteralPath $runConfigPath -Encoding Ascii -Value @(
-    'Video:',
-    '  Write Color Buffers: true',
-    'Miscellaneous:',
-    '  Exit RPCS3 when process finishes: true',
-    '  Start games in fullscreen mode: false',
-    '  Show shader compilation hint: false',
-    '  Show PPU compilation hint: false'
-)
+Set-Content -LiteralPath $runConfigPath -Encoding Ascii -Value (Get-Rpcs3RunConfigLines -SynchronousShaders:$SynchronousShaders)
 $modeArgument = if ($Visible) { '--no-gui' } else { '--headless' }
 $argumentList = @($modeArgument, '--config', ('"' + $runConfigPath + '"'), ('"' + $ArtifactPath + '"'))
 $windowStyle = if ($Visible) { 'Normal' } else { 'Hidden' }
@@ -118,6 +128,7 @@ Set-Content -LiteralPath (Join-Path $runRoot 'emulator-command.txt') -Encoding U
     "BuildId=$buildId",
     "ArtifactSha256=$actualHash",
     "Visible=$([bool]$Visible)",
+    "SynchronousShaders=$([bool]$SynchronousShaders)",
     "StartedUtc=$runStamp"
 )
 $processPath = [Environment]::GetEnvironmentVariable('Path', 'Process')
