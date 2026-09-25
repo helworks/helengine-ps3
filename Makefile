@@ -122,7 +122,7 @@ else
 CXXFLAGS := -std=c++17 -Wall -Wextra -Werror -O2 -g -mcpu=cell $(MACHDEP) $(INCLUDES) $(HELENGINE_DEFINES)
 endif
 LDFLAGS := $(MACHDEP) -Wl,-Map,$(MAP)
-LIBS := -lrsx -lgcm_sys -lsysutil -lrt -llv2 -lm
+LIBS := -lio -lrsx -lgcm_sys -lsysutil -lrt -llv2 -lm
 
 .PHONY: all verify-generated-core
 .DELETE_ON_ERROR:

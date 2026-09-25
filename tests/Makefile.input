@@ -1,0 +1,20 @@
+# Real generated InputSystem and native pad backend; the fixture replaces only pad I/O.
+.SUFFIXES:
+include $(PSL1GHT)/ppu_rules
+TARGET := ps3_input_backend_tests
+SOURCES := /src/src/platform/ps3/Ps3InputBackend.cpp /src/tests/ps3_input_backend_tests.cpp
+OBJECTS := $(patsubst /src/%.cpp,/out/obj/%.o,$(SOURCES))
+CXXFLAGS := -std=gnu++20 -Wall -Wextra -Werror -O2 -g -mcpu=cell $(MACHDEP) -fexceptions -frtti -DHELENGINE_PS3_HAS_GENERATED_CORE=1 $(LIBPSL1GHT_INC) -I/src/src -isystem /generated -isystem /generated/runtime
+.PHONY: all
+all: /out/$(TARGET).self
+/out/obj/%.o: /src/%.cpp
+	@mkdir -p "$(dir $@)"
+	$(CXX) $(CXXFLAGS) -MMD -MP -c "$<" -o "$@"
+/out/$(TARGET).elf: $(OBJECTS)
+	$(CXX) $(OBJECTS) /standard/obj/generated/helengine_core_unity.o $(MACHDEP) -Wl,--gc-sections $(LIBPSL1GHT_LIB) -lio -lrsx -lgcm_sys -lsysutil -lrt -llv2 -lm -o "$@"
+/out/$(TARGET).self: /out/$(TARGET).elf
+	@mkdir -p /out/self-stage
+	$(STRIP) "$<" -o /out/self-stage/$(TARGET).elf
+	$(SPRX) /out/self-stage/$(TARGET).elf
+	$(SELF) /out/self-stage/$(TARGET).elf "$@"
+-include $(OBJECTS:.o=.d)
