@@ -31,7 +31,7 @@ private:
     /// <summary>True after a successful 2D or solid-cube initialization.</summary>
     bool Initialized;
 
-    /// <summary>True after safe post-drain resource release.</summary>
+    /// <summary>True after an idle-safe early retirement or successful final-drain release.</summary>
     bool ShutdownComplete;
 
 public:
@@ -58,6 +58,19 @@ public:
     bool InitializeRgba2D(Ps3Video& video, std::uint32_t width, std::uint32_t height,
         const std::uint8_t* rgba, std::size_t byteCount, std::string& error);
 
+    /// <summary>Synchronizes submitted RSX work, then updates a checked rectangle of an owned linear RGBA8 2D texture.</summary>
+    /// <param name="x">Left edge of the destination rectangle in texels.</param>
+    /// <param name="y">Top edge of the destination rectangle in texels.</param>
+    /// <param name="width">Non-zero rectangle width, fully contained by the texture.</param>
+    /// <param name="height">Non-zero rectangle height, fully contained by the texture.</param>
+    /// <param name="rgba">Non-null row-major source bytes in explicit R,G,B,A channel order.</param>
+    /// <param name="byteCount">Available source bytes; at least the last-row minimum is required, and surplus bytes are accepted.</param>
+    /// <param name="rowPitch">Source bytes between rows; must be at least width times four.</param>
+    /// <param name="error">Receives validation or synchronization detail without modifying texels on failure.</param>
+    /// <returns>True after synchronized rows are converted into the existing RSX allocation.</returns>
+    bool UpdateRgbaRegion(std::uint32_t x, std::uint32_t y, std::uint32_t width, std::uint32_t height,
+        const std::uint8_t* rgba, std::size_t byteCount, std::size_t rowPitch, std::string& error);
+
     /// <summary>Creates six 128-byte-spaced swizzled 1x1 faces containing the explicitly supplied RGBA color.</summary>
     /// <param name="video">Initialized video owner; it must outlive this live owner and its explicit shutdown.</param>
     /// <param name="rgba">Non-null face color in explicit R,G,B,A byte order.</param>
@@ -71,7 +84,18 @@ public:
     /// <returns>True when cache invalidation and texture state commands are queued.</returns>
     bool Bind(std::uint32_t textureUnit, std::string& error);
 
-    /// <summary>Releases storage only after Ps3Video reports a successful final drain.</summary>
+    /// <summary>Configures linear minification/magnification with clamp-to-edge for an owned 2D texture.</summary>
+    /// <param name="textureUnit">Physical texture unit mapped by the validated SDK pixel program.</param>
+    /// <param name="error">Receives the lifecycle, dimensionality, unit, or context error without submitting rejected commands.</param>
+    /// <returns>True when cache invalidation and linear-clamp texture state commands are queued.</returns>
+    bool BindLinearClamp(std::uint32_t textureUnit, std::string& error);
+
+    /// <summary>Waits for submitted work and releases this texture before the video's final drain.</summary>
+    /// <param name="error">Receives lifecycle or synchronization detail; failure retains the descriptor and allocation.</param>
+    /// <returns>True after retirement; repeated retirement after success is safe and idempotent.</returns>
+    bool RetireAfterIdle(std::string& error);
+
+    /// <summary>Releases a live owner only after Ps3Video reports a successful final drain; an already retired owner is idempotent.</summary>
     /// <param name="error">Receives the lifecycle reason if the resource is still referenced or never initialized.</param>
     /// <returns>True when the owner is retired and reports zero owned RSX bytes.</returns>
     bool ShutdownAfterDrain(std::string& error);
@@ -81,6 +105,16 @@ public:
     std::size_t OwnedGpuBytes() const;
 
 private:
+    /// <summary>Validates the owner and submits shared clamp-to-edge state with the requested min/mag filter.</summary>
+    /// <param name="textureUnit">Physical RSX texture unit to bind.</param>
+    /// <param name="filter">SDK filter constant applied to both minification and magnification.</param>
+    /// <param name="operation">Operation label used to make any returned validation error specific.</param>
+    /// <param name="requireLinear2D">True only when the explicit linear-clamp API is used.</param>
+    /// <param name="error">Receives a validation failure before any texture command is submitted.</param>
+    /// <returns>True when the texture state commands have been queued.</returns>
+    bool BindWithFilter(std::uint32_t textureUnit, std::uint32_t filter, const char* operation,
+        bool requireLinear2D, std::string& error);
+
     /// <summary>Releases RSX-local memory and clears its descriptor after lifetime checks have succeeded.</summary>
     void ReleaseOwnedResources();
 };

@@ -52,10 +52,17 @@ namespace helengine::ps3 {
         /// command stream, enqueues the GPU-side flip wait and rotates the target index.
         bool Present();
 
+        /// Waits for a submitted flip, when present, and all queued RSX work to complete.
+        /// Unlike Drain(), this non-terminal synchronization does not authorize release of
+        /// long-lived video resources or mark the video owner as drained. A timeout is
+        /// latched and prevents subsequent frame submission and resource retirement.
+        /// @return True when submitted work is idle and the video remains usable.
+        bool WaitForSubmittedWork();
+
         /// Waits for all queued RSX work to complete through the label write-back primitive
         /// used by the pinned sample, after first waiting for any pending flip. Only valid
-        /// after successful context initialization. A timeout is reported and remembered so
-        /// GPU-owned memory is never freed afterwards.
+        /// after successful context initialization. This is the final drain operation. A
+        /// timeout is reported and remembered so GPU-owned memory is never freed afterwards.
         bool Drain();
 
         /// Releases the depth surface when Drain() succeeded, retains process-lifetime
@@ -63,7 +70,8 @@ namespace helengine::ps3 {
         /// after partial initialization.
         void Shutdown();
 
-        /// Returns the RSX command context (null before Initialize()).
+        /// Returns the usable RSX command context, or null before initialization and after a
+        /// terminal drain, shutdown, or latched synchronization failure.
         gcmContextData* Context() const;
 
         /// Returns the configured frame width in pixels.
@@ -85,7 +93,7 @@ namespace helengine::ps3 {
         /// shows where the ring buffer wraps).
         unsigned CommandWriteOffset() const;
 
-        /// Returns true when Drain() has completed successfully.
+        /// Returns true only when Drain() completed successfully without any latched failure.
         bool HasDrained() const;
 
         /// Diagnostic readback of one pixel (X8R8G8B8 as 0x00RRGGBB) from the color buffer

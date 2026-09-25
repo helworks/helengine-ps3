@@ -196,8 +196,8 @@ namespace helengine::ps3 {
     }
 
     bool Ps3Video::BeginFrame(bool deferClear) {
-        if (!Ready) {
-            std::printf("PS3_VIDEO_ERROR stage=BeginFrame reason=not-ready\n");
+        if (!Ready || ShutdownDone || Drained || DrainFailed) {
+            std::printf("PS3_VIDEO_ERROR stage=BeginFrame reason=video-unavailable drainFailed=%d\n", DrainFailed ? 1 : 0);
             return false;
         }
         if (FlipPending) {
@@ -230,8 +230,8 @@ namespace helengine::ps3 {
 
     bool Ps3Video::ClearSurface(bool clearColorEnabled, bool clearDepthEnabled, bool clearStencilEnabled,
                                 u32 packedColor, u32 packedDepthStencil) {
-        if (!Ready) {
-            std::printf("PS3_VIDEO_ERROR stage=ClearSurface reason=not-ready\n");
+        if (!Ready || ShutdownDone || Drained || DrainFailed) {
+            std::printf("PS3_VIDEO_ERROR stage=ClearSurface reason=video-unavailable drainFailed=%d\n", DrainFailed ? 1 : 0);
             return false;
         }
         u32 mask = 0;
@@ -259,8 +259,8 @@ namespace helengine::ps3 {
     }
 
     bool Ps3Video::Present() {
-        if (!Ready) {
-            std::printf("PS3_VIDEO_ERROR stage=Present reason=not-ready\n");
+        if (!Ready || ShutdownDone || Drained || DrainFailed) {
+            std::printf("PS3_VIDEO_ERROR stage=Present reason=video-unavailable drainFailed=%d\n", DrainFailed ? 1 : 0);
             return false;
         }
         // Flush the frame's commands before queuing the flip. gcmSetFlip appends the flip
@@ -287,6 +287,10 @@ namespace helengine::ps3 {
     }
 
     bool Ps3Video::WaitForFlip() {
+        if (!ContextInitialized || ContextValue == nullptr || ShutdownDone || DrainFailed) {
+            std::printf("PS3_VIDEO_ERROR stage=wait-flip reason=video-unavailable drainFailed=%d\n", DrainFailed ? 1 : 0);
+            return false;
+        }
         const s64 start = sysGetSystemTime();
         while (gcmGetFlipStatus() != 0) {
             sysUtilCheckCallback();
@@ -302,8 +306,21 @@ namespace helengine::ps3 {
     }
 
     bool Ps3Video::SignalAndWaitLabel() {
+        if (!ContextInitialized || ContextValue == nullptr || ShutdownDone || Drained || DrainFailed) {
+            std::printf("PS3_VIDEO_ERROR stage=wait-label reason=video-unavailable drainFailed=%d\n", DrainFailed ? 1 : 0);
+            return false;
+        }
         ++LabelValue;
+#if defined(HELENGINE_PS3_TEST_WITHHOLD_RUNTIME_LABEL)
+        const bool withholdRuntimeLabel = Ready;
+        if (withholdRuntimeLabel) {
+            std::printf("PS3_TEST_FAULT_WITHHELD_RUNTIME_LABEL label=%u\n", LabelValue);
+        } else {
+            rsxSetWriteBackendLabel(ContextValue, DrainLabelIndex, LabelValue);
+        }
+#else
         rsxSetWriteBackendLabel(ContextValue, DrainLabelIndex, LabelValue);
+#endif
         rsxFlushBuffer(ContextValue);
         volatile u32* label = gcmGetLabelAddress(DrainLabelIndex);
         const s64 start = sysGetSystemTime();
@@ -321,16 +338,46 @@ namespace helengine::ps3 {
     }
 
     bool Ps3Video::WaitForRsxIdle() {
+        if (!ContextInitialized || ContextValue == nullptr || ShutdownDone || DrainFailed) {
+            std::printf("PS3_VIDEO_ERROR stage=initial-idle reason=video-unavailable drainFailed=%d\n", DrainFailed ? 1 : 0);
+            return false;
+        }
         ++LabelValue;
         rsxSetWriteBackendLabel(ContextValue, DrainLabelIndex, LabelValue);
         rsxSetWaitLabel(ContextValue, DrainLabelIndex, LabelValue);
         return SignalAndWaitLabel();
     }
 
+    bool Ps3Video::WaitForSubmittedWork() {
+        if (!Ready || !ContextInitialized || ContextValue == nullptr || ShutdownDone || Drained || DrainFailed) {
+            std::printf("PS3_VIDEO_ERROR stage=wait-submitted-work reason=video-unavailable drainFailed=%d\n",
+                        DrainFailed ? 1 : 0);
+            return false;
+        }
+        if (FlipPending) {
+            if (!WaitForFlip()) {
+                return false;
+            }
+            FlipPending = false;
+        }
+        if (!SignalAndWaitLabel()) {
+            return false;
+        }
+        std::printf("PS3_SUBMITTED_WORK_COMPLETE label=%u frames=%u drained=0\n", LabelValue, PresentedFrames);
+        return true;
+    }
+
     bool Ps3Video::Drain() {
-        if (!ContextInitialized) {
+        if (!ContextInitialized || ContextValue == nullptr) {
             std::printf("PS3_DRAIN_SKIPPED reason=no-context\n");
             return false;
+        }
+        if (ShutdownDone || DrainFailed) {
+            std::printf("PS3_DRAIN_SKIPPED reason=video-unavailable drainFailed=%d\n", DrainFailed ? 1 : 0);
+            return false;
+        }
+        if (Drained) {
+            return true;
         }
         if (FlipPending) {
             if (!WaitForFlip()) {
@@ -365,6 +412,9 @@ namespace helengine::ps3 {
     }
 
     gcmContextData* Ps3Video::Context() const {
+        if (!ContextInitialized || ShutdownDone || Drained || DrainFailed) {
+            return nullptr;
+        }
         return ContextValue;
     }
 
@@ -400,7 +450,7 @@ namespace helengine::ps3 {
     }
 
     bool Ps3Video::HasDrained() const {
-        return Drained;
+        return Drained && !DrainFailed;
     }
 
     bool Ps3Video::ReadDisplayedPixel(unsigned x, unsigned y, unsigned* colorOut) const {

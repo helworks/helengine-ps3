@@ -151,6 +151,93 @@ bool Ps3AuthoredTexture::InitializeRgba2D(Ps3Video& video, std::uint32_t width, 
     return true;
 }
 
+bool Ps3AuthoredTexture::UpdateRgbaRegion(std::uint32_t x, std::uint32_t y,
+    std::uint32_t width, std::uint32_t height, const std::uint8_t* rgba,
+    std::size_t byteCount, std::size_t rowPitch, std::string& error) {
+    error.clear();
+    if (!Initialized || ShutdownComplete) {
+        SetFailure(error, "update-rgba-region", "owner is not initialized or has already been retired");
+        return false;
+    }
+    if (VideoValue == nullptr || VideoValue->Context() == nullptr) {
+        SetFailure(error, "update-rgba-region", "video context is unavailable or synchronization has failed");
+        return false;
+    }
+    if (TextureBuffer == nullptr || OwnedGpuBytesValue == 0u) {
+        SetFailure(error, "update-rgba-region", "owned texture allocation is unavailable");
+        return false;
+    }
+    if (TextureValue.dimension != GCM_TEXTURE_DIMS_2D || TextureValue.cubemap != GCM_FALSE
+        || (TextureValue.format & GCM_TEXTURE_FORMAT_LIN) != GCM_TEXTURE_FORMAT_LIN
+        || TextureValue.pitch == 0u) {
+        SetFailure(error, "update-rgba-region", "updates require an owned linear non-cube 2D texture");
+        return false;
+    }
+    if (rgba == nullptr) {
+        SetFailure(error, "update-rgba-region", "RGBA source pointer is null");
+        return false;
+    }
+    if (width == 0u || height == 0u) {
+        SetFailure(error, "update-rgba-region", "region dimensions must be non-zero");
+        return false;
+    }
+    if (x > TextureValue.width || y > TextureValue.height
+        || width > static_cast<std::uint32_t>(TextureValue.width) - x
+        || height > static_cast<std::uint32_t>(TextureValue.height) - y) {
+        SetFailure(error, "update-rgba-region", "region lies outside the texture bounds");
+        return false;
+    }
+
+    const std::size_t widthValue = static_cast<std::size_t>(width);
+    const std::size_t heightValue = static_cast<std::size_t>(height);
+    const std::size_t sizeMaximum = std::numeric_limits<std::size_t>::max();
+    if (widthValue > sizeMaximum / 4u) {
+        SetFailure(error, "update-rgba-region", "row byte size overflows size_t");
+        return false;
+    }
+    const std::size_t rowBytes = widthValue * 4u;
+    if (rowPitch < rowBytes) {
+        SetFailure(error, "update-rgba-region", "source row pitch is smaller than the RGBA row size");
+        return false;
+    }
+    if (heightValue - 1u > (sizeMaximum - rowBytes) / rowPitch) {
+        SetFailure(error, "update-rgba-region", "source byte extent overflows size_t");
+        return false;
+    }
+    const std::size_t requiredBytes = (heightValue - 1u) * rowPitch + rowBytes;
+    if (byteCount < requiredBytes) {
+        SetFailure(error, "update-rgba-region", "source byte count is smaller than the checked row extent");
+        return false;
+    }
+    const std::size_t destinationPitch = static_cast<std::size_t>(TextureValue.pitch);
+    if (static_cast<std::size_t>(TextureValue.width) > sizeMaximum / 4u
+        || destinationPitch < static_cast<std::size_t>(TextureValue.width) * 4u) {
+        SetFailure(error, "update-rgba-region", "destination pitch cannot contain the texture rows");
+        return false;
+    }
+
+    if (!VideoValue->WaitForSubmittedWork()) {
+        SetFailure(error, "update-rgba-region", "submitted RSX work did not become idle; texture remains unchanged");
+        return false;
+    }
+
+    const std::uint8_t* sourceBytes = rgba;
+    std::uint8_t* destinationBytes = static_cast<std::uint8_t*>(TextureBuffer);
+    for (std::size_t row = 0u; row < heightValue; ++row) {
+        const std::uint8_t* sourceRow = sourceBytes + row * rowPitch;
+        std::uint32_t* destinationRow = reinterpret_cast<std::uint32_t*>(
+            destinationBytes + (static_cast<std::size_t>(y) + row) * destinationPitch);
+        for (std::size_t column = 0u; column < widthValue; ++column) {
+            destinationRow[static_cast<std::size_t>(x) + column] = PackA8R8G8B8(sourceRow + column * 4u);
+        }
+    }
+    rsxInvalidateTextureCache(VideoValue->Context(), GCM_INVALIDATE_TEXTURE);
+    std::printf("PS3_AUTHORED_TEXTURE_UPDATED x=%u y=%u width=%u height=%u rowPitch=%lu requiredBytes=%lu ownedGpuBytes=%lu\n",
+        x, y, width, height, static_cast<unsigned long>(rowPitch), static_cast<unsigned long>(requiredBytes),
+        static_cast<unsigned long>(OwnedGpuBytesValue));
+    return true;
+}
+
 bool Ps3AuthoredTexture::InitializeSolidCube(Ps3Video& video, const std::uint8_t rgba[4], std::string& error) {
     error.clear();
     if (Initialized || ShutdownComplete) {
@@ -219,17 +306,30 @@ bool Ps3AuthoredTexture::InitializeSolidCube(Ps3Video& video, const std::uint8_t
 }
 
 bool Ps3AuthoredTexture::Bind(std::uint32_t textureUnit, std::string& error) {
+    return BindWithFilter(textureUnit, GCM_TEXTURE_NEAREST, "bind", false, error);
+}
+
+bool Ps3AuthoredTexture::BindLinearClamp(std::uint32_t textureUnit, std::string& error) {
+    return BindWithFilter(textureUnit, GCM_TEXTURE_LINEAR, "bind-linear-clamp", true, error);
+}
+
+bool Ps3AuthoredTexture::BindWithFilter(std::uint32_t textureUnit, std::uint32_t filter,
+    const char* operation, bool requireLinear2D, std::string& error) {
     error.clear();
     if (!Initialized || ShutdownComplete) {
-        SetFailure(error, "bind", "owner is not initialized");
+        SetFailure(error, operation, "owner is not initialized");
         return false;
     }
-    if (VideoValue == nullptr || VideoValue->Context() == nullptr || VideoValue->HasDrained()) {
-        SetFailure(error, "bind", "video context is unavailable or already drained");
+    if (VideoValue == nullptr || VideoValue->Context() == nullptr) {
+        SetFailure(error, operation, "video context is unavailable, drained, or synchronization has failed");
         return false;
     }
     if (textureUnit > 15u) {
-        SetFailure(error, "bind", "physical texture unit must be between zero and fifteen");
+        SetFailure(error, operation, "physical texture unit must be between zero and fifteen");
+        return false;
+    }
+    if (requireLinear2D && (TextureValue.dimension != GCM_TEXTURE_DIMS_2D || TextureValue.cubemap != GCM_FALSE)) {
+        SetFailure(error, operation, "linear clamp requires a non-cube 2D texture");
         return false;
     }
 
@@ -238,11 +338,34 @@ bool Ps3AuthoredTexture::Bind(std::uint32_t textureUnit, std::string& error) {
     rsxInvalidateTextureCache(context, GCM_INVALIDATE_TEXTURE);
     rsxLoadTexture(context, unit, &TextureValue);
     rsxTextureControl(context, unit, GCM_TRUE, 0u, 0u, GCM_TEXTURE_MAX_ANISO_1);
-    rsxTextureFilter(context, unit, 0u, GCM_TEXTURE_NEAREST, GCM_TEXTURE_NEAREST,
+    rsxTextureFilter(context, unit, 0u, filter, filter,
         GCM_TEXTURE_CONVOLUTION_QUINCUNX);
     rsxTextureWrapMode(context, unit, GCM_TEXTURE_CLAMP_TO_EDGE,
         GCM_TEXTURE_CLAMP_TO_EDGE, GCM_TEXTURE_CLAMP_TO_EDGE,
         GCM_TEXTURE_UNSIGNED_REMAP_NORMAL, GCM_TEXTURE_ZFUNC_ALWAYS, 0u);
+    return true;
+}
+
+bool Ps3AuthoredTexture::RetireAfterIdle(std::string& error) {
+    error.clear();
+    if (ShutdownComplete) {
+        return true;
+    }
+    if (!Initialized) {
+        SetFailure(error, "retire", "owner is not initialized");
+        return false;
+    }
+    if (VideoValue == nullptr || VideoValue->Context() == nullptr) {
+        SetFailure(error, "retire", "video context is unavailable; owned texture storage is retained");
+        return false;
+    }
+    if (!VideoValue->WaitForSubmittedWork()) {
+        SetFailure(error, "retire", "submitted RSX work did not become idle; owned texture storage is retained");
+        return false;
+    }
+    ReleaseOwnedResources();
+    ShutdownComplete = true;
+    std::printf("PS3_AUTHORED_TEXTURE_RETIRED\n");
     return true;
 }
 
