@@ -38,6 +38,7 @@ $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 $testId = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
 $testsRoot = Join-Path ([IO.Path]::GetFullPath($ExternalRoot)) "script-tests-$testId"
 $outputRoot = Join-Path $testsRoot 'out put'
+$testStateRoot = Join-Path $testsRoot 'state'
 $fakeDockerDirectory = Join-Path $testsRoot 'fake-docker'
 $fakeEmulatorDirectory = Join-Path $testsRoot 'fake rpcs3'
 $fakeEmulator = Join-Path $fakeEmulatorDirectory 'rpcs3 fake.cmd'
@@ -55,8 +56,14 @@ if (-not ($lock.ResolvedImage.PSObject.Properties.Name -contains 'ImageId')) {
 
 New-Item -ItemType Directory -Path $outputRoot, $fakeDockerDirectory, $fakeEmulatorDirectory | Out-Null
 $repoCgLibrary = Join-Path $repoRoot '.ps3\dependencies\cg\usr\lib64\libCg.so'
-New-Item -ItemType Directory -Path (Split-Path -Parent $repoCgLibrary) -Force | Out-Null
-[IO.File]::WriteAllBytes($repoCgLibrary, [byte[]]@(1, 2, 3, 4))
+$repoCgLibraryHashBefore = if (Test-Path -LiteralPath $repoCgLibrary -PathType Leaf) {
+    (Get-FileHash -LiteralPath $repoCgLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
+} else {
+    $null
+}
+$testCgLibrary = Join-Path $testStateRoot 'dependencies\cg\usr\lib64\libCg.so'
+New-Item -ItemType Directory -Path (Split-Path -Parent $testCgLibrary) -Force | Out-Null
+[IO.File]::WriteAllBytes($testCgLibrary, [byte[]]@(1, 2, 3, 4))
 
 # --- Fake docker shim ------------------------------------------------------------------
 Set-Content -LiteralPath (Join-Path $fakeDockerDirectory 'docker.cmd') -Encoding Ascii -Value @(
@@ -179,12 +186,12 @@ try {
     # Existing BuildId is rejected before any build starts.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
     New-Item -ItemType Directory -Path (Join-Path $outputRoot 'existing-01') | Out-Null
-    Assert-Rejected 'Existing BuildId' { & $buildScript -BuildId 'existing-01' -Mode Clear -OutputRoot $outputRoot }
+    Assert-Rejected 'Existing BuildId' { & $buildScript -StateRoot $testStateRoot -BuildId 'existing-01' -Mode Clear -OutputRoot $outputRoot }
     Assert-True 'Existing BuildId left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'existing-01\build-manifest.json')))
 
     # Nonzero build exit produces no manifest.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'fail'
-    Assert-Rejected 'Nonzero build' { & $buildScript -BuildId 'fail-01' -Mode Clear -OutputRoot $outputRoot }
+    Assert-Rejected 'Nonzero build' { & $buildScript -StateRoot $testStateRoot -BuildId 'fail-01' -Mode Clear -OutputRoot $outputRoot }
     Assert-True 'Nonzero build left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'fail-01\build-manifest.json')))
     Assert-True 'Nonzero build kept its log' ((Test-Path -LiteralPath (Join-Path $outputRoot 'fail-01\build.log')) -and ((Get-Content -LiteralPath (Join-Path $outputRoot 'fail-01\build.log') -Raw) -match 'simulated compiler error'))
 
@@ -193,21 +200,21 @@ try {
     # Each expectation names the reason, so a case cannot pass because the parameter failed
     # to bind or because an unrelated error happened to be thrown first.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
-    Assert-Rejected 'Core mode without generated root' { & $buildScript -BuildId 'core-missing-01' -Mode Core -GeneratedCoreRoot (Join-Path $testsRoot 'absent-core') -OutputRoot $outputRoot } 'Generated Core root'
+    Assert-Rejected 'Core mode without generated root' { & $buildScript -StateRoot $testStateRoot -BuildId 'core-missing-01' -Mode Core -GeneratedCoreRoot (Join-Path $testsRoot 'absent-core') -OutputRoot $outputRoot } 'Generated Core root'
     Assert-True 'Core mode without generated root left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'core-missing-01\build-manifest.json')))
 
     # A generated root that exists but holds no unity translation unit is equally invalid.
     $emptyCoreRoot = Join-Path $testsRoot 'empty-core'
     New-Item -ItemType Directory -Path $emptyCoreRoot -Force | Out-Null
-    Assert-Rejected 'Core mode without a unity source' { & $buildScript -BuildId 'core-empty-01' -Mode Core -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'unity'
+    Assert-Rejected 'Core mode without a unity source' { & $buildScript -StateRoot $testStateRoot -BuildId 'core-empty-01' -Mode Core -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'unity'
     Assert-True 'Core mode without a unity source left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'core-empty-01\build-manifest.json')))
 
     # The parameter is meaningless outside Core mode and must be refused rather than ignored.
-    Assert-Rejected 'Generated root outside Core mode' { & $buildScript -BuildId 'core-misuse-01' -Mode Cube -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'only valid in Core mode'
+    Assert-Rejected 'Generated root outside Core mode' { & $buildScript -StateRoot $testStateRoot -BuildId 'core-misuse-01' -Mode Cube -GeneratedCoreRoot $emptyCoreRoot -OutputRoot $outputRoot } 'only valid in Core mode'
 
     # A Core failure point outside Core mode would compile away with no Core present, so the
     # build would appear to honour a request it silently dropped.
-    Assert-Rejected 'Core failure point outside Core mode' { & $buildScript -BuildId 'core-fp-misuse-01' -Mode Cube -CoreFailurePoint 'DuringCoreDraw' -OutputRoot $outputRoot } '-CoreFailurePoint is only valid in Core mode'
+    Assert-Rejected 'Core failure point outside Core mode' { & $buildScript -StateRoot $testStateRoot -BuildId 'core-fp-misuse-01' -Mode Cube -CoreFailurePoint 'DuringCoreDraw' -OutputRoot $outputRoot } '-CoreFailurePoint is only valid in Core mode'
     Assert-True 'Core failure point outside Core mode left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'core-fp-misuse-01\build-manifest.json')))
 
     # A successful Core-mode build must fingerprint the generated tree and record it. This
@@ -217,7 +224,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $fakeCoreRoot 'runtime') -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $fakeCoreRoot 'helengine_core_unity.cpp') -Value '#include "runtime/thing.cpp"' -Encoding Ascii
     Set-Content -LiteralPath (Join-Path $fakeCoreRoot 'runtime\thing.cpp') -Value 'int thing() { return 1; }' -Encoding Ascii
-    & $buildScript -BuildId 'core-ok-01' -Mode Core -GeneratedCoreRoot $fakeCoreRoot -OutputRoot $outputRoot | Out-Null
+    & $buildScript -StateRoot $testStateRoot -BuildId 'core-ok-01' -Mode Core -GeneratedCoreRoot $fakeCoreRoot -OutputRoot $outputRoot | Out-Null
     $coreManifestPath = Join-Path $outputRoot 'core-ok-01\build-manifest.json'
     Assert-True 'Core mode wrote a manifest' (Test-Path -LiteralPath $coreManifestPath)
     if (Test-Path -LiteralPath $coreManifestPath) {
@@ -232,12 +239,12 @@ try {
 
     # Zero-byte output is rejected even though the container exited zero.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'zero-elf'
-    Assert-Rejected 'Zero-byte ELF' { & $buildScript -BuildId 'zero-01' -Mode Clear -OutputRoot $outputRoot }
+    Assert-Rejected 'Zero-byte ELF' { & $buildScript -StateRoot $testStateRoot -BuildId 'zero-01' -Mode Clear -OutputRoot $outputRoot }
     Assert-True 'Zero-byte ELF left no manifest' (-not (Test-Path -LiteralPath (Join-Path $outputRoot 'zero-01\build-manifest.json')))
 
     # Successful build in a path with spaces writes a complete manifest.
     $env:HELENGINE_PS3_TEST_SCENARIO = 'success'
-    & $buildScript -BuildId 'spaces-01' -Mode Cube -FixedPose -FixedPoseRadians 1.5708 -RunSeconds 30 -FailurePoint AfterRenderer -OutputRoot $outputRoot | Out-Null
+    & $buildScript -StateRoot $testStateRoot -BuildId 'spaces-01' -Mode Cube -FixedPose -FixedPoseRadians 1.5708 -RunSeconds 30 -FailurePoint AfterRenderer -OutputRoot $outputRoot | Out-Null
     $successRoot = Join-Path $outputRoot 'spaces-01'
     $manifestPath = Join-Path $successRoot 'build-manifest.json'
     Assert-True 'Success manifest exists' (Test-Path -LiteralPath $manifestPath)
@@ -252,14 +259,21 @@ try {
     Assert-True 'Build disabled networking' ($dockerArgsText -match '--network\nnone')
     Assert-True 'Build mounted source read-only' ($dockerArgsText -match 'target=/src,readonly')
     Assert-True 'Build mounted Cg read-only' ($dockerArgsText -match 'target=/opt/cg,readonly')
+    Assert-True 'Build mounted the isolated test Cg toolkit' ($dockerArgsText -match [regex]::Escape($testStateRoot))
 
     # The default output root is the repository-local .ps3/builds directory.
     $defaultBuildId = "default-local-$testId"
-    & $buildScript -BuildId $defaultBuildId -Mode Cube | Out-Null
-    $defaultBuildRoot = Join-Path $repoRoot ".ps3\builds\$defaultBuildId"
+    & $buildScript -StateRoot $testStateRoot -BuildId $defaultBuildId -Mode Cube | Out-Null
+    $defaultBuildRoot = Join-Path $testStateRoot "builds\$defaultBuildId"
     Assert-True 'Default build root is repo-local' (Test-Path -LiteralPath (Join-Path $defaultBuildRoot 'build-manifest.json'))
     $defaultDockerArgsText = Get-Content -LiteralPath (Join-Path $defaultBuildRoot 'fake-docker-args.txt') -Raw
     Assert-True 'Default build passed repo-local output mount' ($defaultDockerArgsText -match [regex]::Escape('target=/out'))
+    $repoCgLibraryHashAfter = if (Test-Path -LiteralPath $repoCgLibrary -PathType Leaf) {
+        (Get-FileHash -LiteralPath $repoCgLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
+    } else {
+        $null
+    }
+    Assert-True 'Build contract tests preserve the repository Cg toolkit' ($repoCgLibraryHashAfter -eq $repoCgLibraryHashBefore)
 
     $artifactPath = Join-Path $successRoot 'helengine_ps3.self'
 
@@ -305,8 +319,8 @@ try {
     $runDirectories = @(Get-ChildItem -LiteralPath (Join-Path $successRoot 'emulator-runs') -Directory)
     Assert-True 'Launcher recorded a run directory' ($runDirectories.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $runDirectories[0].FullName 'emulator-command.txt')))
 
-    & $launcherScript -ArtifactPath (Join-Path $defaultBuildRoot 'helengine_ps3.self') -RpcS3Path $fakeEmulator | Out-Null
-    Assert-True 'Launcher default root is repo-local' (Test-Path -LiteralPath $fakeLaunchMarker)
+    & $launcherScript -ArtifactPath (Join-Path $defaultBuildRoot 'helengine_ps3.self') -RpcS3Path $fakeEmulator -OutputRoot (Join-Path $testStateRoot 'builds') | Out-Null
+    Assert-True 'Launcher accepts the isolated build state root' (Test-Path -LiteralPath $fakeLaunchMarker)
     if (Test-Path -LiteralPath $fakeLaunchMarker) { Remove-Item -LiteralPath $fakeLaunchMarker -Force }
 }
 finally {

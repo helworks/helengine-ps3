@@ -1,0 +1,78 @@
+# Standalone PS3 camera-order integration fixture linked to the exact parent standard Core object.
+
+.SUFFIXES:
+
+ifeq ($(strip $(PSL1GHT)),)
+$(error PSL1GHT must be supplied by the pinned helengine-ps3-sdk image)
+endif
+ifneq ($(SRC_ROOT),/src)
+$(error SRC_ROOT must be /src in the read-only repository mount)
+endif
+ifneq ($(BUILD_ROOT),/out)
+$(error BUILD_ROOT must be /out in the visible writable task output)
+endif
+ifneq ($(STANDARD_ROOT),/standard)
+$(error STANDARD_ROOT must be /standard in the read-only standard build mount)
+endif
+
+include $(PSL1GHT)/ppu_rules
+
+TARGET := ps3_batch2d_camera_tests
+ELF := $(BUILD_ROOT)/$(TARGET).elf
+SELF_OUT := $(BUILD_ROOT)/$(TARGET).self
+FAKE_SELF_OUT := $(BUILD_ROOT)/$(TARGET).fake.self
+OBJECT_ROOT := $(BUILD_ROOT)/obj
+SELF_STAGE := $(BUILD_ROOT)/self-stage
+CORE_OBJECT := $(STANDARD_ROOT)/obj/generated/helengine_core_unity.o
+SHADER_OBJECTS := $(STANDARD_ROOT)/shaders/unlit.vpo.o $(STANDARD_ROOT)/shaders/unlit.fpo.o
+
+SOURCES := \
+	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredContentCache.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredProgram.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredTexture.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DPrograms.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DRenderer.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DResources.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DSink.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DSceneDiagnostics.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DUniformProvider.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3ClipScissorStack2D.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3ContentStreamSource.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3CubeMesh.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3CubeTransform.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3InputBackend.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3MaterialArtifactReader.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RasterRenderer.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RenderManager2D.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RenderManager3D.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RsxProgramValidator.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RuntimeAssets.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RuntimeMaterial.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RuntimeModel.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3RuntimeTexture.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3ShaderArtifactReader.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3StandardUniformProvider.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3Video.cpp \
+	$(SRC_ROOT)/tests/ps3_batch2d_camera_tests.cpp
+OBJECTS := $(patsubst $(SRC_ROOT)/%.cpp,$(OBJECT_ROOT)/%.o,$(SOURCES))
+CXXFLAGS := -std=c++20 -Wall -Wextra -Werror -fexceptions -frtti -DHELENGINE_PS3_HAS_GENERATED_CORE=1 -O2 -g -mcpu=cell $(MACHDEP) $(LIBPSL1GHT_INC) -I$(SRC_ROOT)/src -I$(SRC_ROOT)/tests -I$(STANDARD_ROOT)/shaders -isystem /generated -isystem /generated/runtime
+LIBS := -lio -lrsx -lgcm_sys -lsysutil -lrt -llv2 -lm
+
+.PHONY: all
+all: $(SELF_OUT)
+
+$(OBJECT_ROOT)/%.o: $(SRC_ROOT)/%.cpp
+	@mkdir -p "$(dir $@)"
+	$(CXX) $(CXXFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MT "$@" -c "$<" -o "$@"
+
+$(ELF): $(OBJECTS) $(CORE_OBJECT) $(SHADER_OBJECTS)
+	$(CXX) $(OBJECTS) $(CORE_OBJECT) $(SHADER_OBJECTS) $(MACHDEP) $(LIBPSL1GHT_LIB) $(LIBS) -o "$@"
+
+$(SELF_OUT): $(ELF)
+	@mkdir -p "$(SELF_STAGE)"
+	$(STRIP) "$<" -o "$(SELF_STAGE)/$(TARGET).elf"
+	$(SPRX) "$(SELF_STAGE)/$(TARGET).elf"
+	$(SELF) "$(SELF_STAGE)/$(TARGET).elf" "$@"
+	$(FSELF) "$(SELF_STAGE)/$(TARGET).elf" "$(FAKE_SELF_OUT)"
+
+-include $(OBJECTS:.o=.d)

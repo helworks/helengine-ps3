@@ -175,7 +175,8 @@ namespace helengine::ps3 {
         gcmSurface surface = {};
         surface.type = GCM_SURFACE_TYPE_LINEAR;
         surface.antiAlias = GCM_SURFACE_CENTER_1;
-        surface.colorFormat = GCM_SURFACE_X8R8G8B8;
+        // Keep destination alpha available for standard source-alpha UI compositing.
+        surface.colorFormat = GCM_SURFACE_A8R8G8B8;
         surface.colorTarget = GCM_SURFACE_TARGET_0;
         for (u32 slot = 0; slot < GCM_MAX_MRT_COUNT; ++slot) {
             surface.colorLocation[slot] = GCM_LOCATION_RSX;

@@ -21,6 +21,7 @@ param(
     [string]$RpcS3Path = $env:HELENGINE_PS3_RPCS3_PATH,
     [switch]$Visible,
     [string]$OutputRoot = '',
+    [string]$RuntimeRoot = '',
     [switch]$SynchronousShaders
 )
 
@@ -109,9 +110,15 @@ if (-not (Test-Path -LiteralPath $RpcS3Path -PathType Leaf)) {
 }
 
 # --- Launch -----------------------------------------------------------------------------
-$runStamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
-$runRoot = Join-Path $buildRoot "emulator-runs\$runStamp"
-New-Item -ItemType Directory -Path $runRoot | Out-Null
+if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) {
+    $runStamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+    $runRoot = Join-Path $buildRoot "emulator-runs\$runStamp"
+    New-Item -ItemType Directory -Path $runRoot | Out-Null
+} else {
+    $runRoot = [IO.Path]::GetFullPath($RuntimeRoot)
+    $runtimePrefix = [IO.Path]::GetFullPath((Join-Path $buildRoot 'emulator-runs')).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $runRoot.StartsWith($runtimePrefix, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $runRoot -PathType Container)) { throw 'RuntimeRoot must name an existing run below this verified build.' }
+}
 $stdoutPath = Join-Path $runRoot 'emulator-stdout.log'
 $stderrPath = Join-Path $runRoot 'emulator-stderr.log'
 # A per-run game configuration (RPCS3 --config) makes the emulator exit when the PS3
@@ -129,7 +136,7 @@ Set-Content -LiteralPath (Join-Path $runRoot 'emulator-command.txt') -Encoding U
     "ArtifactSha256=$actualHash",
     "Visible=$([bool]$Visible)",
     "SynchronousShaders=$([bool]$SynchronousShaders)",
-    "StartedUtc=$runStamp"
+    "StartedUtc=$([DateTime]::UtcNow.ToString('o'))"
 )
 $processPath = [Environment]::GetEnvironmentVariable('Path', 'Process')
 if ([string]::IsNullOrWhiteSpace($processPath)) {

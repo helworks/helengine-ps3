@@ -1,4 +1,5 @@
 using helengine.baseplatform.Manifest;
+using System.Security.Cryptography;
 
 namespace helengine.ps3.builder;
 
@@ -27,22 +28,22 @@ public sealed class Ps3ContentStager {
             throw new ArgumentException("Staging root is required.", nameof(stagingRootPath));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         string sourceRoot = Path.GetFullPath(sourceRootPath);
         string stagingRoot = Path.GetFullPath(stagingRootPath);
-        if (string.Equals(TrimSeparators(sourceRoot), TrimSeparators(stagingRoot), StringComparison.OrdinalIgnoreCase)) {
-            throw new InvalidOperationException("PlayStation 3 source and staging roots must be different directories.");
+        ValidateNoReparsePoints(sourceRoot);
+        ValidateNoReparsePoints(stagingRoot);
+        if (IsSameOrDescendant(sourceRoot, stagingRoot) || IsSameOrDescendant(stagingRoot, sourceRoot)) {
+            throw new InvalidOperationException("PlayStation 3 source and staging roots must not overlap.");
         }
-
-        // A stale staging root would ship content this build never declared.
-        if (Directory.Exists(stagingRoot)) {
-            Directory.Delete(stagingRoot, true);
-        }
-        Directory.CreateDirectory(stagingRoot);
 
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
-        List<string> staged = new(artifacts.Count);
+        List<(string RelativePath, string SourcePath, string DestinationPath)> prepared = new(artifacts.Count);
         foreach (PlatformBuildArtifact artifact in artifacts) {
             cancellationToken.ThrowIfCancellationRequested();
+            if (artifact == null) {
+                throw new InvalidOperationException("PlayStation 3 cooked artifact manifest contains a null entry.");
+            }
             string relativePath = NormalizeRelativePath(artifact.RelativePath);
             if (!seenPaths.Add(relativePath)) {
                 throw new InvalidOperationException($"PlayStation 3 cooked artifact path collision: '{relativePath}'.");
@@ -56,6 +57,21 @@ public sealed class Ps3ContentStager {
             }
 
             string destinationPath = ResolveUnderRoot(stagingRoot, relativePath);
+            ValidateNoReparsePoints(sourcePath);
+            ValidateContentHash(artifact, sourcePath);
+            prepared.Add((relativePath, sourcePath, destinationPath));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        // Invalid declarations must not erase the preceding build's content. Once the whole
+        // manifest passes preflight, remove stale undeclared files before copying this build.
+        if (Directory.Exists(stagingRoot)) {
+            Directory.Delete(stagingRoot, true);
+        }
+        Directory.CreateDirectory(stagingRoot);
+        List<string> staged = new(prepared.Count);
+        foreach ((string relativePath, string sourcePath, string destinationPath) in prepared) {
+            cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? stagingRoot);
             File.Copy(sourcePath, destinationPath, true);
             staged.Add(relativePath);
@@ -65,7 +81,7 @@ public sealed class Ps3ContentStager {
         return staged;
     }
 
-    /// <summary>Normalizes one manifest-relative path to forward slashes with no leading separator.</summary>
+    /// <summary>Normalizes slash direction while rejecting rooted paths and ambiguous runtime path segments.</summary>
     /// <param name="relativePath">Path as declared by the manifest.</param>
     /// <returns>Canonical relative path the runtime will request.</returns>
     public static string NormalizeRelativePath(string relativePath) {
@@ -73,7 +89,51 @@ public sealed class Ps3ContentStager {
             throw new InvalidOperationException("PlayStation 3 cooked artifacts must declare a relative path.");
         }
 
-        return relativePath.Replace('\\', '/').TrimStart('/');
+        string slashNormalized = relativePath.Replace('\\', '/');
+        if (slashNormalized.Split('/').Any(segment => segment.Contains(':') || segment.EndsWith('.') || segment.EndsWith(' '))) {
+            throw new InvalidOperationException($"Cooked artifact path '{relativePath}' contains a Windows path alias.");
+        }
+        string normalized = slashNormalized.Trim();
+        // Shared packaged-path validation rejects rooted and traversal paths. Preserve case
+        // for older manifests while collapsing separators the same way as packaged paths.
+        _ = helengine.CanonicalPackagedAssetPath.Normalize(normalized);
+        return string.Join('/', normalized.Split('/', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>Checks a declared SHA-256 receipt against the source bytes before staging changes.</summary>
+    /// <param name="artifact">Manifest entry carrying the optional SHA-256 receipt.</param>
+    /// <param name="sourcePath">Existing cooked file to verify.</param>
+    static void ValidateContentHash(PlatformBuildArtifact artifact, string sourcePath) {
+        // Older manifests used opaque identities. The editor's current receipts use sha256:.
+        if (!artifact.ContentHash.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) return;
+        using FileStream source = File.OpenRead(sourcePath);
+        string actual = "sha256:" + Convert.ToHexString(SHA256.HashData(source));
+        if (!string.Equals(actual, artifact.ContentHash, StringComparison.OrdinalIgnoreCase)) {
+            throw new InvalidOperationException($"PlayStation 3 cooked artifact '{artifact.RelativePath}' does not match its declared SHA-256 content hash.");
+        }
+    }
+
+    /// <summary>Checks directory equality and ancestry with a separator boundary, including filesystem roots.</summary>
+    /// <param name="path">Normalized candidate directory.</param>
+    /// <param name="parent">Normalized containing directory.</param>
+    /// <returns>True if deleting the parent can also delete the candidate.</returns>
+    static bool IsSameOrDescendant(string path, string parent) {
+        string relative = Path.GetRelativePath(parent, path);
+        return !Path.IsPathRooted(relative) && relative != ".."
+            && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    /// <summary>Refuses filesystem links that can disguise overlapping roots or redirect a declared source outside its root.</summary>
+    /// <param name="path">Source file, root, or destination root whose existing ancestors must be ordinary directories.</param>
+    static void ValidateNoReparsePoints(string path) {
+        string current = path;
+        while (!string.IsNullOrEmpty(current)) {
+            if ((File.Exists(current) || Directory.Exists(current))
+                && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) {
+                throw new InvalidOperationException($"Content staging path '{path}' crosses filesystem link '{current}'.");
+            }
+            current = Path.GetDirectoryName(current);
+        }
     }
 
     /// <summary>Resolves a relative path under a root and refuses anything that escapes it.</summary>

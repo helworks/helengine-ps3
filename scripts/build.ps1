@@ -18,14 +18,17 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
     [string]$BuildId,
+    [switch]$ReuseBuild,
     [ValidateSet('Clear','Cube','Core')][string]$Mode = 'Cube',
     [switch]$FixedPose,
     [ValidateRange(0,3600)][int]$RunSeconds = 0,
     [ValidateSet('None','AfterVideo','AfterRenderer')]
     [string]$FailurePoint = 'None',
+    [string]$StateRoot = '',
     [string]$OutputRoot = '',
     [ValidateRange(0.0, 6.2832)][double]$FixedPoseRadians = 0.6,
     [string]$GeneratedCoreRoot = '',
+    [string]$NativeObjectCacheRoot = '',
     [string]$ContentRoot = '',
     [ValidateSet('None','AfterCoreInitialize','DuringCoreDraw')]
     [string]$CoreFailurePoint = 'None'
@@ -42,8 +45,13 @@ Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
-$stateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot
-$OutputRoot = Resolve-Ps3OutputRoot -RepoRoot $repoRoot -RequestedRoot $OutputRoot
+$stateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
+$outputRootRequest = if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+    Join-Path $stateRoot 'builds'
+} else {
+    $OutputRoot
+}
+$OutputRoot = Resolve-Ps3OutputRoot -RepoRoot $repoRoot -RequestedRoot $outputRootRequest
 if ($Mode -eq 'Core' -and [string]::IsNullOrWhiteSpace($GeneratedCoreRoot)) {
     $GeneratedCoreRoot = Join-Path $stateRoot 'generated-core'
 }
@@ -51,6 +59,10 @@ $buildRoot = Join-Path $OutputRoot $BuildId
 $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 $launchArtifactName = 'helengine_ps3.self'
 $requiredArtifacts = @('helengine_ps3.elf', 'helengine_ps3.self', 'helengine_ps3.map', 'build.log', 'elf-header.txt')
+
+if (-not [string]::IsNullOrWhiteSpace($NativeObjectCacheRoot)) {
+    $NativeObjectCacheRoot = [IO.Path]::GetFullPath($NativeObjectCacheRoot)
+}
 
 function Get-FileSha256 {
     param([string]$Path)
@@ -108,8 +120,17 @@ function Invoke-NativeToLog {
 
 # --- Preconditions: fresh directory, resolved lock, verified image, Cg mount ----------
 if (Test-Path -LiteralPath $buildRoot) {
-    throw "Refusing to reuse existing build directory: $buildRoot"
-}
+    if (-not $ReuseBuild) { throw "Refusing to reuse existing build directory without ReuseBuild: $buildRoot" }
+    $buildRoot = [IO.Path]::GetFullPath($buildRoot)
+    $outputPrefix = [IO.Path]::GetFullPath($OutputRoot).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $buildRoot.StartsWith($outputPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Active native build escaped the selected output root.' }
+    $activeManifest = Get-Content -LiteralPath (Join-Path $buildRoot 'build-manifest.json') -Raw | ConvertFrom-Json
+    if ($activeManifest.BuildId -ne $BuildId -or $activeManifest.Mode -ne $Mode) { throw 'Active native build receipt does not match the requested id and mode.' }
+    foreach ($artifact in $activeManifest.Artifacts) {
+        if ($artifact.Path -notin @('helengine_ps3.elf','helengine_ps3.self','helengine_ps3.map')) { continue }
+        if ((Get-FileSha256 (Join-Path $buildRoot $artifact.Path)) -ne $artifact.Sha256) { throw 'Active native artifact no longer matches its previous SDK receipt.' }
+    }
+} elseif ($ReuseBuild) { throw "ReuseBuild requires an existing verified native build: $buildRoot" }
 if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
     throw "Toolchain lock does not exist: $lockPath"
 }
@@ -188,15 +209,36 @@ $failurePointValue = switch ($FailurePoint) { 'None' { 0 } 'AfterVideo' { 1 } 'A
 $defines.Add("-DHELENGINE_PS3_FAILURE_POINT=$failurePointValue")
 $definesText = $defines -join ' '
 
+# The PS3 make rules track source and header dependencies, but GNU make does not
+# invalidate objects when compiler flags change. Isolate caches by the pinned image,
+# lock, mode, and every explicit compile definition while preserving the caller's
+# project/profile cache root.
+$nativeObjectRoot = ''
+if (-not [string]::IsNullOrWhiteSpace($NativeObjectCacheRoot)) {
+    $fingerprintText = @($imageId, $lockHash, $Mode, $definesText, $generatedCoreUnityName) -join "`n"
+    $fingerprintBytes = [Text.Encoding]::UTF8.GetBytes($fingerprintText)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $fingerprint = ([BitConverter]::ToString($sha.ComputeHash($fingerprintBytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+    $nativeObjectRoot = Join-Path $NativeObjectCacheRoot ('objects-' + $fingerprint)
+    New-Item -ItemType Directory -Path $nativeObjectRoot -Force | Out-Null
+}
+
 # --- Source identity -------------------------------------------------------------------
-$sourceCommit = ((Invoke-CheckedNative 'git' @('-C', $repoRoot, 'rev-parse', 'HEAD')) -join '').Trim()
-$sourceStatus = Invoke-CheckedNative 'git' @('-C', $repoRoot, 'status', '--porcelain', '--untracked-files=all')
+$sourceCommit = ((Invoke-CheckedNative 'git' @('-c', "safe.directory=$repoRoot", '-C', $repoRoot, 'rev-parse', 'HEAD')) -join '').Trim()
+$sourceStatus = Invoke-CheckedNative 'git' @('-c', "safe.directory=$repoRoot", '-C', $repoRoot, 'status', '--porcelain', '--untracked-files=all')
 $sourceDirty = @($sourceStatus | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -gt 0
 
 # --- Native build in the locked image --------------------------------------------------
-New-Item -ItemType Directory -Path $buildRoot | Out-Null
+New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
 $buildLogPath = Join-Path $buildRoot 'build.log'
 $makeArguments = "SRC_ROOT=/src BUILD_ROOT=/out MODE=$Mode HELENGINE_DEFINES='$definesText'"
+if (-not [string]::IsNullOrWhiteSpace($nativeObjectRoot)) {
+    $makeArguments = "$makeArguments NATIVE_OBJECT_ROOT=/native-cache"
+}
 if ($Mode -eq 'Core') {
     $makeArguments = "$makeArguments GENERATED_CORE_ROOT=/generated"
 }
@@ -207,6 +249,9 @@ $dockerArgs = @(
     '--mount', "type=bind,source=$buildRoot,target=/out",
     '--mount', "type=bind,source=$cgMountSource,target=$($shaderToolkit.MountTarget),readonly"
 )
+if (-not [string]::IsNullOrWhiteSpace($nativeObjectRoot)) {
+    $dockerArgs += @('--mount', "type=bind,source=$nativeObjectRoot,target=/native-cache")
+}
 if ($Mode -eq 'Core') {
     # Read-only: the generated tree is an input and is never edited after generation.
     $dockerArgs += @('--mount', "type=bind,source=$GeneratedCoreRoot,target=/generated,readonly")
@@ -222,6 +267,20 @@ Set-Content -LiteralPath $buildLogPath -Value @("# $commandText", "# BuildId=$Bu
 $dockerExitCode = Invoke-NativeToLog 'docker' $dockerArgs $buildLogPath
 if ($dockerExitCode -ne 0) {
     throw "Native build failed with exit code $dockerExitCode. See $buildLogPath"
+}
+if (-not [string]::IsNullOrWhiteSpace($nativeObjectRoot)) {
+    $cachedShaderRoot = Join-Path $nativeObjectRoot 'shaders'
+    if (Test-Path -LiteralPath $cachedShaderRoot -PathType Container) {
+        $runShaderRoot = Join-Path $buildRoot 'shaders'
+        New-Item -ItemType Directory -Path $runShaderRoot -Force | Out-Null
+        foreach ($shaderFile in Get-ChildItem -LiteralPath $cachedShaderRoot -Recurse -File -Force) {
+            $relativeShaderPath = $shaderFile.FullName.Substring($cachedShaderRoot.TrimEnd('\', '/').Length + 1)
+            $runShaderPath = Join-Path $runShaderRoot $relativeShaderPath
+            New-Item -ItemType Directory -Path (Split-Path -Parent $runShaderPath) -Force | Out-Null
+            Copy-Item -LiteralPath $shaderFile.FullName -Destination $runShaderPath -Force
+            (Get-Item -LiteralPath $runShaderPath).LastWriteTimeUtc = $shaderFile.LastWriteTimeUtc
+        }
+    }
 }
 
 # --- Artifact verification --------------------------------------------------------------
@@ -352,5 +411,5 @@ $manifest = [PSCustomObject]@{
 $manifestPath = Join-Path $buildRoot 'build-manifest.json'
 $manifestTemporaryPath = Join-Path $buildRoot 'build-manifest.json.tmp'
 [IO.File]::WriteAllText($manifestTemporaryPath, (($manifest | ConvertTo-Json -Depth 6) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
-Move-Item -LiteralPath $manifestTemporaryPath -Destination $manifestPath
+Move-Item -LiteralPath $manifestTemporaryPath -Destination $manifestPath -Force
 Write-Output "Build $BuildId complete: $elfPath (launch artifact $launchArtifactName). Manifest: $manifestPath"

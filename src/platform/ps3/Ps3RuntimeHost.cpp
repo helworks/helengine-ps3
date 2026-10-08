@@ -141,11 +141,11 @@ namespace helengine::ps3 {
 
     bool Ps3RuntimeHost::Initialize(Ps3Video& video, Ps3RasterRenderer& renderer) {
         const GuardedResult adapters = Guard([this, &video, &renderer] {
-            RenderManager3DInstance = new Ps3RenderManager3D(video, renderer);
-            RenderManager2DInstance = new Ps3RenderManager2D();
+            ContentStreamSourceInstance = new Ps3ContentStreamSource();
+            RenderManager2DInstance = new Ps3RenderManager2D(video, renderer, *ContentStreamSourceInstance);
+            RenderManager3DInstance = new Ps3RenderManager3D(video, renderer, *RenderManager2DInstance);
             InputBackendInstance = new Ps3InputBackend();
             PlatformInfoInstance = new ::PlatformInfo(std::string("PlayStation 3"), std::string("0.2.0"));
-            ContentStreamSourceInstance = new Ps3ContentStreamSource();
             InitializationOptionsInstance = new ::CoreInitializationOptions();
             InitializationOptionsInstance->set_ContentStreamSource(ContentStreamSourceInstance);
 
@@ -262,20 +262,21 @@ namespace helengine::ps3 {
     }
 
     void Ps3RuntimeHost::ReleaseAdapters() {
-        // The options object only borrows the content source, so the source outlives it and
-        // is released afterwards.
+        // The 3D coordinator borrows the 2D pass, which in turn borrows the content source.
+        delete RenderManager3DInstance;
+        RenderManager3DInstance = nullptr;
+        delete RenderManager2DInstance;
+        RenderManager2DInstance = nullptr;
+        delete InputBackendInstance;
+        InputBackendInstance = nullptr;
+        delete PlatformInfoInstance;
+        PlatformInfoInstance = nullptr;
+
+        // Core options borrow the source; release both after every CPU adapter is gone.
         delete InitializationOptionsInstance;
         InitializationOptionsInstance = nullptr;
         delete ContentStreamSourceInstance;
         ContentStreamSourceInstance = nullptr;
-        delete PlatformInfoInstance;
-        PlatformInfoInstance = nullptr;
-        delete InputBackendInstance;
-        InputBackendInstance = nullptr;
-        delete RenderManager2DInstance;
-        RenderManager2DInstance = nullptr;
-        delete RenderManager3DInstance;
-        RenderManager3DInstance = nullptr;
     }
 
     bool Ps3RuntimeHost::Shutdown() {
@@ -285,12 +286,37 @@ namespace helengine::ps3 {
         ShutdownDone = true;
 
         bool disposed = true;
+        bool adapterCleanupSucceeded = true;
         if (CoreInstance != nullptr) {
             const GuardedResult disposal = Guard([this] { CoreInstance->Dispose(); });
             if (!disposal.Succeeded) {
-                Fail(Ps3CoreError::CoreDisposal, "Dispose", disposal.Detail.c_str());
+                if (ErrorValue == Ps3CoreError::None) {
+                    Fail(Ps3CoreError::CoreDisposal, "Dispose", disposal.Detail.c_str());
+                } else {
+                    std::printf("PS3_CORE_ERROR stage=Dispose cleanup=1 primaryCode=%u detail=%s\n",
+                                static_cast<unsigned>(ErrorValue), disposal.Detail.c_str());
+                }
                 disposed = false;
             }
+        }
+
+        // Core may have skipped an adapter's Dispose after its own failure. Run the idempotent
+        // 2D cleanup while Core and the borrowed content source are still alive, and report a
+        // secondary cleanup failure without replacing the original guarded error.
+        if (RenderManager2DInstance != nullptr) {
+            const GuardedResult adapterDisposal = Guard([this] { RenderManager2DInstance->Dispose(); });
+            if (!adapterDisposal.Succeeded) {
+                adapterCleanupSucceeded = false;
+                if (ErrorValue == Ps3CoreError::None) {
+                    Fail(Ps3CoreError::CoreDisposal, "RenderManager2D.Dispose", adapterDisposal.Detail.c_str());
+                } else {
+                    std::printf("PS3_CORE_ERROR stage=RenderManager2D.Dispose cleanup=1 primaryCode=%u detail=%s\n",
+                                static_cast<unsigned>(ErrorValue), adapterDisposal.Detail.c_str());
+                }
+            }
+        }
+
+        if (CoreInstance != nullptr) {
             delete CoreInstance;
             CoreInstance = nullptr;
             if (disposed) {
@@ -305,7 +331,7 @@ namespace helengine::ps3 {
         if (disposed && ErrorValue == Ps3CoreError::None) {
             EnterStage(Ps3CoreStage::CleanShutdown);
         }
-        return disposed;
+        return disposed && adapterCleanupSucceeded;
     }
 
     Ps3CoreStage Ps3RuntimeHost::Stage() const {

@@ -14,6 +14,7 @@ class Asset;
 
 namespace helengine::ps3 {
     class Ps3RasterRenderer;
+    class Ps3RenderManager2D;
     class Ps3Video;
 
     /// Bridges Core scene data to the authored P3MT/P3SP standard draw path.
@@ -21,10 +22,12 @@ namespace helengine::ps3 {
     /// The initial profile supports one whole-model submesh, opaque material and basic lighting.
     class Ps3RenderManager3D final : public ::RenderManager3D, public ::IRenderVisitor3D {
     public:
-        /// Creates an adapter bound to the video owner and raster renderer it draws through.
-        /// @param video Video owner supplying the display aspect. Must outlive this.
+        /// Creates a camera coordinator bound to the video, shared raster owners, and 2D pass.
+        /// @param video Video owner supplying the display surface and dimensions. Must outlive this.
         /// @param renderer Raster renderer that uploads geometry and submits draws. Must outlive this.
-        Ps3RenderManager3D(Ps3Video& video, Ps3RasterRenderer& renderer);
+        /// @param renderer2D Per-camera 2D pass, called after each camera's 3D queue. Must outlive this.
+        Ps3RenderManager3D(Ps3Video& video, Ps3RasterRenderer& renderer,
+                           Ps3RenderManager2D& renderer2D);
 
         /// Draws one scene drawable the camera ordered.
         /// @param drawable Drawable Core ordered for the active camera.
@@ -91,6 +94,9 @@ namespace helengine::ps3 {
 
         /// Raster renderer that uploads geometry and submits draws.
         Ps3RasterRenderer& Renderer;
+
+        /// Per-camera 2D pass coordinated after each camera's 3D queue.
+        Ps3RenderManager2D& Renderer2D;
 
         /// Video owner supplying the display aspect.
         Ps3Video& Video;

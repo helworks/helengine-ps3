@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using helengine.baseplatform.Requests;
 
 namespace helengine.ps3.builder;
@@ -14,6 +15,9 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
 
     /// <summary>Name of the optional environment variable selecting the native run duration in seconds.</summary>
     public const string RunSecondsVariable = "HELENGINE_PS3_NATIVE_RUN_SECONDS";
+
+    /// <summary>Name of the optional existing native build id selected for an explicit in-place rebuild.</summary>
+    public const string ActiveBuildIdVariable = "HELENGINE_PS3_ACTIVE_BUILD_ID";
 
     /// <summary>Builds a Core-mode executable from the supplied generated Core root.</summary>
     /// <param name="request">Complete platform request.</param>
@@ -47,7 +51,11 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
         }
 
         string powershell = Environment.GetEnvironmentVariable(PowerShellVariable) ?? "powershell";
-        string buildId = $"core-{Guid.NewGuid():N}";
+        string activeBuildId = Environment.GetEnvironmentVariable(ActiveBuildIdVariable);
+        if (activeBuildId != null && !Regex.IsMatch(activeBuildId, "^[A-Za-z0-9][A-Za-z0-9._-]*$")) {
+            throw new InvalidOperationException($"{ActiveBuildIdVariable} must be one safe existing build directory name.");
+        }
+        string buildId = activeBuildId ?? $"core-{Guid.NewGuid():N}";
         ProcessStartInfo startInfo = new(powershell) {
             WorkingDirectory = repositoryRoot,
             UseShellExecute = false
@@ -57,6 +65,9 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
         startInfo.ArgumentList.Add(buildScript);
         startInfo.ArgumentList.Add("-BuildId");
         startInfo.ArgumentList.Add(buildId);
+        if (activeBuildId != null) {
+            startInfo.ArgumentList.Add("-ReuseBuild");
+        }
         startInfo.ArgumentList.Add("-Mode");
         startInfo.ArgumentList.Add("Core");
         startInfo.ArgumentList.Add("-OutputRoot");

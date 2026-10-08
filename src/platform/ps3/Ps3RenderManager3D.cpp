@@ -4,7 +4,9 @@
 
 #include <cstdio>
 #include <cmath>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 #include <algorithm>
 
@@ -25,6 +27,8 @@
 #include "ModelSubmeshResolver.hpp"
 #include "RuntimeSubmesh.hpp"
 #include "PlatformMaterialAsset.hpp"
+#include "CameraViewportResolver.hpp"
+#include "IRenderQueue2D.hpp"
 #include "float2.hpp"
 #include "float3.hpp"
 #include "float4.hpp"
@@ -33,6 +37,7 @@
 
 #include "platform/ps3/Ps3RuntimeAssets.hpp"
 #include "platform/ps3/Ps3RasterRenderer.hpp"
+#include "platform/ps3/Ps3RenderManager2D.hpp"
 #include "platform/ps3/Ps3Vertex.hpp"
 #include "platform/ps3/Ps3StandardDrawData.hpp"
 #include "platform/ps3/Ps3Video.hpp"
@@ -123,9 +128,110 @@ namespace helengine::ps3 {
             const u32 depth24 = static_cast<u32>(static_cast<double>(depth) * 16777215.0 + 0.5);
             return (depth24 << 8) | static_cast<u32>(stencil);
         }
+
+        /// Converts a finite camera edge to the pixel-center convention shared with 2D.
+        int32_t PixelEdge(double edge) {
+            const double rounded = std::ceil(edge - 0.5);
+            if (!std::isfinite(rounded) || rounded < 0.0 ||
+                rounded > static_cast<double>(std::numeric_limits<int32_t>::max())) {
+                throw std::runtime_error("PS3 3D camera viewport edge is outside supported integer pixels");
+            }
+            return static_cast<int32_t>(rounded);
+        }
+
+        /// Resolves normalized or pixel camera geometry and rounds its edges like the 2D pass.
+        ::float4 ResolvePixelViewport(::float4 requested, unsigned width, unsigned height) {
+            const ::float4 resolved = ::CameraViewportResolver::ResolveViewport(
+                requested, static_cast<double>(width), static_cast<double>(height));
+            if (!std::isfinite(resolved.X) || !std::isfinite(resolved.Y) ||
+                !std::isfinite(resolved.Z) || !std::isfinite(resolved.W) ||
+                resolved.X < 0.0f || resolved.Y < 0.0f || resolved.Z <= 0.0f || resolved.W <= 0.0f) {
+                throw std::runtime_error("PS3 3D camera viewport must be finite and positive");
+            }
+            const int32_t left = PixelEdge(resolved.X);
+            const int32_t top = PixelEdge(resolved.Y);
+            const int32_t right = PixelEdge(static_cast<double>(resolved.X) + resolved.Z);
+            const int32_t bottom = PixelEdge(static_cast<double>(resolved.Y) + resolved.W);
+            if (right <= left || bottom <= top ||
+                static_cast<uint64_t>(right) > width || static_cast<uint64_t>(bottom) > height) {
+                throw std::runtime_error("PS3 3D camera viewport extends outside the backbuffer");
+            }
+            return ::float4(static_cast<float>(left), static_cast<float>(top),
+                static_cast<float>(right - left), static_cast<float>(bottom - top));
+        }
+
+        /// Restores 3D color/depth and fixed-function state without changing the active viewport.
+        void Restore3DState(Ps3Video& video) {
+            gcmContextData* const context = video.Context();
+            if (context == nullptr || video.Width() == 0 || video.Height() == 0) {
+                throw std::logic_error("PS3 3D write-state restore requires a live video surface");
+            }
+            rsxSetColorMask(context, GCM_COLOR_MASK_B | GCM_COLOR_MASK_G | GCM_COLOR_MASK_R | GCM_COLOR_MASK_A);
+            rsxSetColorMaskMrt(context, 0);
+            rsxSetZMinMaxControl(context, GCM_FALSE, GCM_TRUE, GCM_FALSE);
+            rsxSetDepthTestEnable(context, GCM_TRUE);
+            rsxSetDepthFunc(context, GCM_LESS);
+            rsxSetDepthWriteEnable(context, GCM_TRUE);
+            rsxSetBlendEnable(context, GCM_FALSE);
+            rsxSetStencilTestEnable(context, GCM_FALSE);
+            rsxSetAlphaTestEnable(context, GCM_FALSE);
+            rsxSetLogicOpEnable(context, GCM_FALSE);
+            rsxSetShadeModel(context, GCM_SHADE_MODEL_SMOOTH);
+            rsxSetFrontFace(context, GCM_FRONTFACE_CCW);
+            rsxSetCullFace(context, GCM_CULL_BACK);
+            rsxSetCullFaceEnable(context, GCM_TRUE);
+            rsxSetUserClipPlaneControl(context, GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE,
+                GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE,
+                GCM_USER_CLIP_PLANE_DISABLE, GCM_USER_CLIP_PLANE_DISABLE);
+        }
+
+        /// Restores the full-backbuffer viewport and 3D state once before camera scheduling.
+        void RestoreFullSurfaceState(Ps3Video& video) {
+            gcmContextData* const context = video.Context();
+            if (context == nullptr || video.Width() == 0 || video.Height() == 0) {
+                throw std::logic_error("PS3 full-surface restore requires a live video surface");
+            }
+            const u16 width = static_cast<u16>(video.Width());
+            const u16 height = static_cast<u16>(video.Height());
+            const f32 scale[4] = { width * 0.5f, height * -0.5f, 0.5f, 0.0f };
+            const f32 offset[4] = { width * 0.5f, height * 0.5f, 0.5f, 0.0f };
+            rsxSetViewport(context, 0, 0, width, height, 0.0f, 1.0f, scale, offset);
+            rsxSetScissor(context, 0, 0, width, height);
+            for (u8 clipIndex = 0; clipIndex < 8; ++clipIndex) {
+                rsxSetViewportClip(context, clipIndex, width, height);
+            }
+            Restore3DState(video);
+        }
+
+        /// Applies a camera-local transform while retaining full-backbuffer viewport clip bounds.
+        void Configure3DViewport(Ps3Video& video, const ::float4& pixelViewport) {
+            gcmContextData* const context = video.Context();
+            if (context == nullptr) {
+                throw std::logic_error("PS3 3D viewport requires a live video context");
+            }
+            const u16 width = static_cast<u16>(pixelViewport.Z);
+            const u16 height = static_cast<u16>(pixelViewport.W);
+            const f32 scale[4] = { width * 0.5f, height * -0.5f, 0.5f, 0.0f };
+            // SDK bounds and transform both use the tested camera origin; they do not double-translate.
+            const f32 offset[4] = {
+                pixelViewport.X + width * 0.5f,
+                pixelViewport.Y + height * 0.5f,
+                0.5f,
+                0.0f
+            };
+            rsxSetViewport(context, static_cast<u16>(pixelViewport.X),
+                static_cast<u16>(pixelViewport.Y), width, height, 0.0f, 1.0f, scale, offset);
+            rsxSetScissor(context, static_cast<u16>(pixelViewport.X),
+                static_cast<u16>(pixelViewport.Y), width, height);
+            for (u8 clipIndex = 0; clipIndex < 8; ++clipIndex) {
+                rsxSetViewportClip(context, clipIndex,
+                    static_cast<u16>(video.Width()), static_cast<u16>(video.Height()));
+            }
+        }
     }
 
-    Ps3RenderManager3D::Ps3RenderManager3D(Ps3Video& video, Ps3RasterRenderer& renderer)
+    Ps3RenderManager3D::Ps3RenderManager3D(Ps3Video& video, Ps3RasterRenderer& renderer,
+        Ps3RenderManager2D& renderer2D)
         : DrawCounter(0)
         , LoggedFirstDraw(false)
         , RaiseOnDraw(false)
@@ -133,6 +239,7 @@ namespace helengine::ps3 {
         , MaterialCounter(0)
         , ModelCounter(0)
         , Renderer(renderer)
+        , Renderer2D(renderer2D)
         , Video(video)
         , ViewProjection(::float4x4::get_Identity())
         , VisitedDrawables(0)
@@ -192,39 +299,22 @@ namespace helengine::ps3 {
         VisitedDrawables = 0;
         SubmittedDrawables = 0;
 
-        // Every stage below names itself when it cannot proceed, because a camera or queue
-        // that is merely absent looks identical on screen to one that is broken.
+        // Core invokes the 3D manager before its compatibility 2D Draw hook. This coordinator
+        // owns the actual per-camera order so each camera's 3D queue precedes its 2D queue.
         ::Core* core = get_OwnerCore();
         if (core == nullptr || core->get_ObjectManager() == nullptr) {
+            Renderer2D.FlushPending();
+            RestoreFullSurfaceState(Video);
             Video.ClearDefaultSurface();
             NoteSkip("no-object-manager");
             return;
         }
         ::List<::ICamera*>* cameras = core->get_ObjectManager()->get_Cameras();
         if (cameras == nullptr || cameras->get_Count() == 0) {
+            Renderer2D.FlushPending();
+            RestoreFullSurfaceState(Video);
             Video.ClearDefaultSurface();
             NoteSkip("no-camera");
-            return;
-        }
-        ::ICamera* camera = cameras->get_Item(0);
-        if (camera == nullptr) {
-            Video.ClearDefaultSurface();
-            NoteSkip("camera-incomplete");
-            return;
-        }
-
-        ::CameraClearSettings clearSettings = camera->get_ClearSettings();
-        const ::float4 clearColor = clearSettings.get_ClearColor();
-        if (!Video.ClearSurface(clearSettings.get_ClearColorEnabled(),
-                                clearSettings.get_ClearDepthEnabled(),
-                                clearSettings.get_ClearStencilEnabled(),
-                                PackCameraColor(clearColor),
-                                PackCameraDepthStencil(clearSettings.get_ClearDepth(), clearSettings.get_ClearStencil()))) {
-            NoteSkip("camera-clear-failed");
-            return;
-        }
-        if (camera->get_Parent() == nullptr || camera->get_RenderQueue3D() == nullptr) {
-            NoteSkip("camera-incomplete");
             return;
         }
 
@@ -277,64 +367,131 @@ namespace helengine::ps3 {
                         static_cast<double>(AmbientLight[0]), static_cast<double>(AmbientLight[1]), static_cast<double>(AmbientLight[2]),
                         static_cast<double>(DirectionalLight[0]), static_cast<double>(DirectionalLight[1]), static_cast<double>(DirectionalLight[2]),
                         static_cast<double>(DirectionalDirection[0]), static_cast<double>(DirectionalDirection[1]), static_cast<double>(DirectionalDirection[2]));
-            std::printf("PS3_CORE_CAMERA_CLEAR enabled=%d rgba=%.3f,%.3f,%.3f,%.3f depthEnabled=%d depth=%.3f stencilEnabled=%d stencil=%u\n",
-                        clearSettings.get_ClearColorEnabled() ? 1 : 0,
-                        static_cast<double>(clearColor.X), static_cast<double>(clearColor.Y),
-                        static_cast<double>(clearColor.Z), static_cast<double>(clearColor.W),
-                        clearSettings.get_ClearDepthEnabled() ? 1 : 0,
-                        static_cast<double>(clearSettings.get_ClearDepth()),
-                        clearSettings.get_ClearStencilEnabled() ? 1 : 0,
-                        static_cast<unsigned>(clearSettings.get_ClearStencil()));
         }
 
-        // The view is the inverse of the camera's world transform, and the projection uses the
-        // authored field of view and planes, so one scene frames the same way on every platform.
-        ::float4x4 cameraWorld = camera->get_Parent()->get_WorldTransformMatrix();
-        CameraPosition[0] = cameraWorld.M41;
-        CameraPosition[1] = cameraWorld.M42;
-        CameraPosition[2] = cameraWorld.M43;
-        CameraPosition[3] = 1.0f;
-        const float fov = camera->get_FieldOfView();
-        const float nearPlane = camera->get_NearPlaneDistance();
-        const float farPlane = camera->get_FarPlaneDistance();
-        if (!std::isfinite(fov) || fov <= 0.0f || fov >= 3.14159265358979323846f ||
-            !std::isfinite(nearPlane) || !std::isfinite(farPlane) ||
-            nearPlane <= 0.0f || farPlane <= nearPlane || !std::isfinite(Video.Aspect()) || Video.Aspect() <= 0.0f) {
-            he_cpp_raise(new ::NotSupportedException("PS3 authored camera has invalid perspective parameters."));
-        }
-        // The engine keeps plain inversion private but exposes the inverse transpose, so the
-        // view is recovered by transposing that back. Same result, public surface only.
-        ::float4x4 inverseTranspose = ::float4x4::get_Identity();
-        if (!::float4x4::TryInverseTranspose__ref0_out1(cameraWorld, inverseTranspose)) {
-            he_cpp_raise(new ::NotSupportedException("PS3 authored camera transform is not invertible."));
-        }
-        ::float4x4 view = ::float4x4::get_Identity();
-        ::float4x4::Transpose__ref0_out1(inverseTranspose, view);
-        ::float4x4 projection = ::float4x4::get_Identity();
-        ::float4x4::CreatePerspectiveFieldOfView__out4(
-            camera->get_FieldOfView(),
-            Video.Aspect(),
-            camera->get_NearPlaneDistance(),
-            camera->get_FarPlaneDistance(),
-            projection);
-        ::float4x4::Multiply__ref0_ref1_out2(view, projection, ViewProjection);
+        bool hadRenderableCamera = false;
+        bool fullSurfaceStateRestored = false;
+        std::uint32_t rendered3DCameras = 0;
+        for (int cameraIndex = 0; cameraIndex < cameras->get_Count(); ++cameraIndex) {
+            ::ICamera* camera = cameras->get_Item(cameraIndex);
+            if (camera == nullptr) {
+                he_cpp_raise(new ::NotSupportedException("PS3 camera list contains a null required camera."));
+            }
 
-        if (!LoggedCamera) {
-            LoggedCamera = true;
-            std::printf("PS3_CORE_CAMERA fov=%.4f near=%.3f far=%.1f aspect=%.4f position=%.3f,%.3f,%.3f\n",
-                        static_cast<double>(camera->get_FieldOfView()),
-                        static_cast<double>(camera->get_NearPlaneDistance()),
-                        static_cast<double>(camera->get_FarPlaneDistance()),
-                        static_cast<double>(Video.Aspect()),
-                        static_cast<double>(cameraWorld.M41),
-                        static_cast<double>(cameraWorld.M42),
-                        static_cast<double>(cameraWorld.M43));
+            ::Entity* cameraEntity = camera->get_Parent();
+            if (cameraEntity != nullptr && !cameraEntity->get_IsHierarchyEnabled()) {
+                continue;
+            }
+            if (camera->get_RenderTarget() != nullptr) {
+                he_cpp_raise(new ::NotSupportedException("PS3 camera render targets are unsupported; only the video backbuffer is available."));
+            }
+
+            const ::float4 pixelViewport = ResolvePixelViewport(
+                camera->get_Viewport(), Video.Width(), Video.Height());
+            ::IRenderQueue3D* queue3D = camera->get_RenderQueue3D();
+            ::IRenderQueue2D* queue2D = camera->get_RenderQueue2D();
+            Renderer2D.FlushPending();
+            if (!fullSurfaceStateRestored) {
+                RestoreFullSurfaceState(Video);
+                fullSurfaceStateRestored = true;
+            } else {
+                Restore3DState(Video);
+            }
+            Configure3DViewport(Video, pixelViewport);
+
+            ::CameraClearSettings clearSettings = camera->get_ClearSettings();
+            const ::float4 clearColor = clearSettings.get_ClearColor();
+            if (!Video.ClearSurface(clearSettings.get_ClearColorEnabled(),
+                                    clearSettings.get_ClearDepthEnabled(),
+                                    clearSettings.get_ClearStencilEnabled(),
+                                    PackCameraColor(clearColor),
+                                    PackCameraDepthStencil(clearSettings.get_ClearDepth(), clearSettings.get_ClearStencil()))) {
+                he_cpp_raise(new ::NotSupportedException("PS3 camera surface clear failed."));
+            }
+            hadRenderableCamera = true;
+            if (DrawCounter == 1) {
+                std::printf("PS3_CORE_CAMERA_CLEAR index=%d viewport=%.0f,%.0f,%.0f,%.0f enabled=%d rgba=%.3f,%.3f,%.3f,%.3f depthEnabled=%d depth=%.3f stencilEnabled=%d stencil=%u\n",
+                            cameraIndex, static_cast<double>(pixelViewport.X), static_cast<double>(pixelViewport.Y),
+                            static_cast<double>(pixelViewport.Z), static_cast<double>(pixelViewport.W),
+                            clearSettings.get_ClearColorEnabled() ? 1 : 0,
+                            static_cast<double>(clearColor.X), static_cast<double>(clearColor.Y),
+                            static_cast<double>(clearColor.Z), static_cast<double>(clearColor.W),
+                            clearSettings.get_ClearDepthEnabled() ? 1 : 0,
+                            static_cast<double>(clearSettings.get_ClearDepth()),
+                            clearSettings.get_ClearStencilEnabled() ? 1 : 0,
+                            static_cast<unsigned>(clearSettings.get_ClearStencil()));
+            }
+
+            if (queue3D != nullptr) {
+                const int32_t queueCount = queue3D->get_Count();
+                if (queueCount < 0) {
+                    he_cpp_raise(new ::NotSupportedException("PS3 camera returned a negative 3D queue count."));
+                }
+                if (queueCount > 0) {
+                    if (cameraEntity == nullptr) {
+                        he_cpp_raise(new ::NotSupportedException("PS3 3D camera with queued drawables requires a parent entity."));
+                    }
+
+                    // Only queues with real 3D content require a world transform and perspective.
+                    const float viewportAspect = pixelViewport.Z / pixelViewport.W;
+                    ::float4x4 cameraWorld = cameraEntity->get_WorldTransformMatrix();
+                    CameraPosition[0] = cameraWorld.M41;
+                    CameraPosition[1] = cameraWorld.M42;
+                    CameraPosition[2] = cameraWorld.M43;
+                    CameraPosition[3] = 1.0f;
+                    const float fov = camera->get_FieldOfView();
+                    const float nearPlane = camera->get_NearPlaneDistance();
+                    const float farPlane = camera->get_FarPlaneDistance();
+                    if (!std::isfinite(fov) || fov <= 0.0f || fov >= 3.14159265358979323846f ||
+                        !std::isfinite(nearPlane) || !std::isfinite(farPlane) ||
+                        nearPlane <= 0.0f || farPlane <= nearPlane ||
+                        !std::isfinite(viewportAspect) || viewportAspect <= 0.0f) {
+                        he_cpp_raise(new ::NotSupportedException("PS3 authored camera has invalid perspective parameters."));
+                    }
+                    // Recover inverse(world) by transposing the public inverse-transpose result.
+                    ::float4x4 inverseTranspose = ::float4x4::get_Identity();
+                    if (!::float4x4::TryInverseTranspose__ref0_out1(cameraWorld, inverseTranspose)) {
+                        he_cpp_raise(new ::NotSupportedException("PS3 authored camera transform is not invertible."));
+                    }
+                    ::float4x4 view = ::float4x4::get_Identity();
+                    ::float4x4::Transpose__ref0_out1(inverseTranspose, view);
+                    ::float4x4 projection = ::float4x4::get_Identity();
+                    ::float4x4::CreatePerspectiveFieldOfView__out4(
+                        fov, viewportAspect, nearPlane, farPlane, projection);
+                    ::float4x4::Multiply__ref0_ref1_out2(view, projection, ViewProjection);
+
+                    if (!LoggedCamera) {
+                        LoggedCamera = true;
+                        std::printf("PS3_CORE_CAMERA index=%d fov=%.4f near=%.3f far=%.1f aspect=%.4f viewport=%.0f,%.0f,%.0f,%.0f position=%.3f,%.3f,%.3f\n",
+                                    cameraIndex, static_cast<double>(fov), static_cast<double>(nearPlane),
+                                    static_cast<double>(farPlane), static_cast<double>(viewportAspect),
+                                    static_cast<double>(pixelViewport.X), static_cast<double>(pixelViewport.Y),
+                                    static_cast<double>(pixelViewport.Z), static_cast<double>(pixelViewport.W),
+                                    static_cast<double>(cameraWorld.M41), static_cast<double>(cameraWorld.M42),
+                                    static_cast<double>(cameraWorld.M43));
+                    }
+
+                    queue3D->VisitOrdered(this);
+                    ++rendered3DCameras;
+                }
+            }
+
+            if (queue2D != nullptr) {
+                Renderer2D.RenderCamera(camera);
+            }
         }
 
-        camera->get_RenderQueue3D()->VisitOrdered(this);
+        if (!hadRenderableCamera) {
+            Renderer2D.FlushPending();
+            RestoreFullSurfaceState(Video);
+            Video.ClearDefaultSurface();
+            NoteSkip("no-renderable-camera-queue");
+            return;
+        }
 
         if (DrawCounter == 1) {
-            std::printf("PS3_CORE_RENDER3D_QUEUE visited=%u submitted=%u\n", VisitedDrawables, SubmittedDrawables);
+            std::printf("PS3_CORE_RENDER3D_QUEUE cameras=%u visited=%u submitted=%u\n",
+                        rendered3DCameras, VisitedDrawables, SubmittedDrawables);
         }
     }
 

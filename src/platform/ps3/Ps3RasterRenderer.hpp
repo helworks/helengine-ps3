@@ -3,6 +3,7 @@
 #include <ppu-types.h>
 #include <rsx/rsx.h>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,6 +22,11 @@ namespace helengine::ps3 {
     class Ps3AuthoredContentCache;
     class Ps3RuntimeMaterial;
     struct Ps3StandardDrawData;
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+    class Ps3Batch2DPrograms;
+    class Ps3Batch2DRenderer;
+    class Ps3Batch2DResources;
+#endif
 
     /// Owns diagnostic geometry/programs and source-isolated authored GPU caches.
     /// Authored draws preflight reflected semantics, every active uniform and sampler;
@@ -44,6 +50,22 @@ namespace helengine::ps3 {
         /// logged) if reflection, conversion or any allocation fails. The video object must
         /// outlive this renderer.
         bool Initialize(Ps3Video& video);
+
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+        /// Creates and retains the native shared-2D GPU owners before initializing their buffers.
+        /// @param flushPending Callback that submits queued CPU geometry before texture mutation.
+        void InitializeBatch2D(std::function<void()> flushPending);
+
+        /// Returns the raster-owned Core texture registry after its 2D bridge was initialized.
+        Ps3Batch2DResources& Batch2DResources();
+
+        /// Returns the raster-owned bounded shared-2D GPU submitter after initialization.
+        Ps3Batch2DRenderer& Batch2DRenderer();
+
+        /// Finds or creates a stable shader-pair owner keyed by exact content-source identity.
+        /// @param source Content source used to load the manifest paths and P3SP programs.
+        Ps3Batch2DPrograms& ResolveBatch2DPrograms(::IContentStreamSource& source);
+#endif
 
         /// Submits the cube with the given row-major model/view/projection matrix into the
         /// frame that Ps3Video::BeginFrame() opened. Returns false if not initialized.
@@ -129,6 +151,15 @@ namespace helengine::ps3 {
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
         /// Source-isolated caches whose GPU allocations survive Core disposal.
         std::vector<std::unique_ptr<Ps3AuthoredContentCache>> ContentCaches;
+
+        /// Shared 2D texture allocations retained until successful post-drain shutdown.
+        std::unique_ptr<Ps3Batch2DResources> Batch2DResourcesValue;
+
+        /// Shared 2D geometry buffers retained until successful post-drain shutdown.
+        std::unique_ptr<Ps3Batch2DRenderer> Batch2DRendererValue;
+
+        /// Source-identity shader pairs retained until successful post-drain shutdown.
+        std::vector<std::unique_ptr<Ps3Batch2DPrograms>> Batch2DProgramSets;
 #endif
 
         /// RSX command context borrowed from the video owner.

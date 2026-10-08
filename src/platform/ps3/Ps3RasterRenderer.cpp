@@ -5,14 +5,27 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
 #include "platform/ps3/Ps3AuthoredContentCache.hpp"
 #include "platform/ps3/Ps3AuthoredProgram.hpp"
 #include "platform/ps3/Ps3AuthoredTexture.hpp"
+#include "platform/ps3/Ps3Batch2DPrograms.hpp"
+#include "platform/ps3/Ps3Batch2DRenderer.hpp"
+#include "platform/ps3/Ps3Batch2DResources.hpp"
 #include "platform/ps3/Ps3MaterialArtifactReader.hpp"
 #include "platform/ps3/Ps3RuntimeMaterial.hpp"
 #include "platform/ps3/Ps3StandardUniformProvider.hpp"
+
+#if defined(__has_include)
+#if __has_include("ps3_renderer_shaders.hpp")
+#include "ps3_renderer_shaders.hpp"
+#define HELENGINE_PS3_HAS_BATCH2D_SHADER_MANIFEST 1
+#endif
+#endif
 #endif
 
 #include <ppu-types.h>
@@ -28,6 +41,18 @@
 #include "unlit_fpo.h"
 
 namespace helengine::ps3 {
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+    namespace {
+        /// Adds one GPU-owner size without allowing native-size accounting to wrap.
+        void AddOwnedGpuBytes(std::size_t& total, std::size_t addition) {
+            if (addition > std::numeric_limits<std::size_t>::max() - total) {
+                throw std::overflow_error("PS3 renderer GPU byte accounting overflowed size_t.");
+            }
+            total += addition;
+        }
+    }
+#endif
+
     Ps3RasterRenderer::Ps3RasterRenderer()
         : VideoValue(nullptr)
         , ContextValue(nullptr)
@@ -492,6 +517,68 @@ namespace helengine::ps3 {
         }
         return true;
     }
+
+#if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
+    void Ps3RasterRenderer::InitializeBatch2D(std::function<void()> flushPending) {
+        if (Batch2DResourcesValue != nullptr || Batch2DRendererValue != nullptr || !Batch2DProgramSets.empty()) {
+            throw std::logic_error("PS3 batch 2D raster owners were already initialized or retained after a failed attempt.");
+        }
+        if (!Initialized || VideoValue == nullptr || VideoValue->Context() == nullptr || VideoValue->HasDrained()) {
+            throw std::logic_error("PS3 batch 2D raster owners require an initialized, live video and raster renderer.");
+        }
+        if (!flushPending) {
+            throw std::invalid_argument("PS3 batch 2D raster owners require a CPU submission callback.");
+        }
+
+        // Publish each owner before the next step can allocate GPU memory. A failed
+        // initialization therefore remains reachable for explicit post-drain cleanup.
+        Batch2DResourcesValue = std::make_unique<Ps3Batch2DResources>(*VideoValue, std::move(flushPending));
+        Batch2DRendererValue = std::make_unique<Ps3Batch2DRenderer>(*VideoValue, *Batch2DResourcesValue);
+        Batch2DRendererValue->Initialize();
+        std::printf("PS3_BATCH2D_RASTER_READY rendererBytes=%lu textureBytes=%lu\n",
+                    static_cast<unsigned long>(Batch2DRendererValue->OwnedGpuBytes()),
+                    static_cast<unsigned long>(Batch2DResourcesValue->OwnedGpuBytes()));
+    }
+
+    Ps3Batch2DResources& Ps3RasterRenderer::Batch2DResources() {
+        if (Batch2DResourcesValue == nullptr) {
+            throw std::logic_error("PS3 batch 2D resources were requested before raster bridge initialization.");
+        }
+        return *Batch2DResourcesValue;
+    }
+
+    Ps3Batch2DRenderer& Ps3RasterRenderer::Batch2DRenderer() {
+        if (Batch2DRendererValue == nullptr) {
+            throw std::logic_error("PS3 batch 2D renderer was requested before raster bridge initialization.");
+        }
+        return *Batch2DRendererValue;
+    }
+
+    Ps3Batch2DPrograms& Ps3RasterRenderer::ResolveBatch2DPrograms(::IContentStreamSource& source) {
+        if (VideoValue == nullptr || VideoValue->Context() == nullptr || VideoValue->HasDrained() ||
+            Batch2DResourcesValue == nullptr || Batch2DRendererValue == nullptr) {
+            throw std::logic_error("PS3 batch 2D programs require live raster-owned resources and renderer state.");
+        }
+
+        for (const auto& programs : Batch2DProgramSets) {
+            if (programs->MatchesSource(source)) {
+                return *programs;
+            }
+        }
+
+#if defined(HELENGINE_PS3_HAS_BATCH2D_SHADER_MANIFEST)
+        auto programs = std::make_unique<Ps3Batch2DPrograms>(*VideoValue, source);
+        Ps3Batch2DPrograms* stablePrograms = programs.get();
+        Batch2DProgramSets.push_back(std::move(programs));
+        // Keep a partially initialized owner in the raster if loading either variant fails.
+        stablePrograms->Initialize(BatchTexturedShaderPath, BatchRoundedShapeShaderPath);
+        return *stablePrograms;
+#else
+        (void)source;
+        throw std::runtime_error("PS3 batch 2D renderer manifest is missing; no shader fallback is available.");
+#endif
+    }
+#endif
 #endif
 
     void Ps3RasterRenderer::Shutdown() {
@@ -499,6 +586,7 @@ namespace helengine::ps3 {
             std::printf("PS3_RENDERER_ERROR stage=shutdown reason=video-not-drained\n");
             return;
         }
+        const unsigned ownedBytesBefore = OwnedBytes();
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
         for (auto& cache : ContentCaches) {
             std::string error;
@@ -507,37 +595,77 @@ namespace helengine::ps3 {
                 return;
             }
         }
+
+        bool batch2DRetired = true;
+        std::string batch2DError;
+        if (Batch2DResourcesValue != nullptr && !Batch2DResourcesValue->ShutdownAfterDrain(batch2DError)) {
+            std::printf("PS3_RENDERER_ERROR stage=batch2d-resources-shutdown reason=%s\n", batch2DError.c_str());
+            batch2DRetired = false;
+        }
+        if (batch2DRetired && Batch2DRendererValue != nullptr &&
+            !Batch2DRendererValue->ShutdownAfterDrain(batch2DError)) {
+            std::printf("PS3_RENDERER_ERROR stage=batch2d-renderer-shutdown reason=%s\n", batch2DError.c_str());
+            batch2DRetired = false;
+        }
+        if (batch2DRetired) {
+            for (auto& programs : Batch2DProgramSets) {
+                if (!programs->ShutdownAfterDrain(batch2DError)) {
+                    std::printf("PS3_RENDERER_ERROR stage=batch2d-programs-shutdown reason=%s\n", batch2DError.c_str());
+                    batch2DRetired = false;
+                }
+            }
+        }
+        if (batch2DRetired) {
+            // Destroy borrowers before the resource registry they reference.
+            Batch2DRendererValue.reset();
+            Batch2DProgramSets.clear();
+            Batch2DResourcesValue.reset();
+        }
 #endif
         while (!UploadedMeshes.empty()) {
             Ps3MeshBuffers mesh = UploadedMeshes.back();
             ReleaseMesh(mesh);
         }
-        u32 freedBytes = 0;
+        u32 baseFreedBytes = 0;
         if (IndexBuffer != nullptr) {
             rsxFree(IndexBuffer);
             IndexBuffer = nullptr;
-            freedBytes += IndexBufferBytes;
+            baseFreedBytes += IndexBufferBytes;
         }
         if (VertexBuffer != nullptr) {
             rsxFree(VertexBuffer);
             VertexBuffer = nullptr;
-            freedBytes += VertexBufferBytes;
+            baseFreedBytes += VertexBufferBytes;
         }
         if (FragmentUcodeBuffer != nullptr) {
             rsxFree(FragmentUcodeBuffer);
             FragmentUcodeBuffer = nullptr;
-            freedBytes += FragmentUcodeBytes;
+            baseFreedBytes += FragmentUcodeBytes;
         }
         Initialized = false;
-        std::printf("PS3_RENDERER_SHUTDOWN freedBytes=%u ownedBytesBefore=%u draws=%u\n", freedBytes, OwnedBytesValue, DrawCounter);
-        OwnedBytesValue -= freedBytes;
+        OwnedBytesValue -= baseFreedBytes;
+        const unsigned ownedBytesAfter = OwnedBytes();
+        const unsigned freedBytes = ownedBytesBefore >= ownedBytesAfter
+            ? ownedBytesBefore - ownedBytesAfter
+            : 0u;
+        if (ownedBytesAfter > ownedBytesBefore) {
+            std::printf("PS3_RENDERER_ERROR stage=shutdown reason=gpu-byte-accounting-increased\n");
+        }
+        std::printf("PS3_RENDERER_SHUTDOWN freedBytes=%u ownedBytesBefore=%u ownedBytesAfter=%u draws=%u\n",
+                    freedBytes, ownedBytesBefore, ownedBytesAfter, DrawCounter);
     }
 
     unsigned Ps3RasterRenderer::OwnedBytes() const {
         std::size_t bytes = OwnedBytesValue;
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
-        for (const auto& cache : ContentCaches) bytes += cache->OwnedGpuBytes();
+        for (const auto& cache : ContentCaches) AddOwnedGpuBytes(bytes, cache->OwnedGpuBytes());
+        if (Batch2DResourcesValue != nullptr) AddOwnedGpuBytes(bytes, Batch2DResourcesValue->OwnedGpuBytes());
+        if (Batch2DRendererValue != nullptr) AddOwnedGpuBytes(bytes, Batch2DRendererValue->OwnedGpuBytes());
+        for (const auto& programs : Batch2DProgramSets) AddOwnedGpuBytes(bytes, programs->OwnedGpuBytes());
 #endif
+        if (bytes > std::numeric_limits<unsigned>::max()) {
+            throw std::overflow_error("PS3 renderer GPU byte total exceeds the public unsigned counter.");
+        }
         return static_cast<unsigned>(bytes);
     }
 

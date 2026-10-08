@@ -132,6 +132,8 @@ namespace helengine::ps3 {
             const s64 runLimitMicroseconds = static_cast<s64>(options.RunSeconds) * 1000000;
             unsigned previousCommandOffset = video.CommandWriteOffset();
             unsigned ringWrapCount = 0;
+            // Limits the post-animation framebuffer diagnostic to one set of six pixels.
+            bool lateFrameProbeReported = false;
             while (true) {
                 // Diagnostic: the SDK ring is consumed in segments; a write offset that moves
                 // backwards means the command stream jumped back toward the ring start.
@@ -172,6 +174,14 @@ namespace helengine::ps3 {
                 // BeginFrame confirmed the previous flip, so the displayed buffer is complete.
                 if (rendererReady && video.PresentedFrameCount() == 1) {
                     LogFrameProbe(video, "first-frame", pose);
+                }
+                // A pair of delayed six-pixel samples distinguishes startup rendering from a later scene change.
+                if (coreSceneActive && (video.PresentedFrameCount() == 60 || video.PresentedFrameCount() == 600)) {
+                    LogFrameProbe(video, video.PresentedFrameCount() == 60 ? "authored-frame-60" : "authored-frame-600", pose);
+                }
+                if (coreSceneActive && !lateFrameProbeReported && elapsedMicroseconds >= 90000000) {
+                    lateFrameProbeReported = true;
+                    LogFrameProbe(video, "authored-after-90s", pose);
                 }
                 // Once an authored scene is loaded, Core owns what appears on screen. The
                 // v0.1 diagnostic cube stands down rather than drawing over it, so what is

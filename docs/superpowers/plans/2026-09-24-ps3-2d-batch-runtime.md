@@ -86,30 +86,30 @@ bool RetireAfterIdle(std::string& error);
 // Core texture wrappers expose dimensions and disposal; resources own GPU storage.
 ```
 
-- [ ] RED host tests: manifest writer derives two RuntimeRelativePath values via
+- [x] RED host tests: manifest writer derives two RuntimeRelativePath values via
   Ps3ShaderArtifactIdentity for exact SpriteBatchShader variant identities; rejects
   missing/duplicate cooked declarations and paths not staged under cooked/shaders.
   Use the existing startup-manifest generation pattern, not a manually created file
   inside generated output. Generate `ps3_renderer_shaders.hpp` beside startup catalog
   with named Textured/RoundedShape path constants. Native code consumes this header.
-- [ ] Implement writer and invoke it beside Ps3StartupManifestWriter before native
+- [x] Implement writer and invoke it beside Ps3StartupManifestWriter before native
   build. No changes to the build scripts are necessary. Validate declared manifest
   entries before generation; dependency absence is an error, never a builtin fallback.
-- [ ] RED resource tests cover actual raw RGBA creation, exact width/height/row-pitch,
+- [x] RED resource tests cover actual raw RGBA creation, exact width/height/row-pitch,
   2x2 four-color texture orientation, update with padded input rows and out-of-bounds
   rejection. Include repeated updates/disposal with no GPU allocation growth.
-- [ ] Implement `WaitForSubmittedWork` using existing SignalAndWaitLabel timeout/
+- [x] Implement `WaitForSubmittedWork` using existing SignalAndWaitLabel timeout/
   callback/error handling. It must NOT set final Drained=true. A timeout latches the
   existing fatal/retention state; never reclaim or overwrite memory after failure.
-- [ ] UpdateRgbaRegion validates byte extents/overflow first, then waits for queued
+- [x] UpdateRgbaRegion validates byte extents/overflow first, then waits for queued
   reads before copying into the existing RGBA texture allocation and invalidating
   texture cache. RetireAfterIdle waits before releasing; ShutdownAfterDrain retains
   its existing final-drain requirement. Do not weaken old program-owner lifetime rules.
-- [ ] Build source-scoped bounded P3SP reads for both variants and real cooked/raw
+- [x] Build source-scoped bounded P3SP reads for both variants and real cooked/raw
   texture reads using IContentStreamSource/AssetSerializer. Reuse existing validated
   read/identity behavior, but do not invoke the fixed ForwardStandard material reader
   for 2D programs. Validate all stage bindings before publishing initialized owners.
-- [ ] RuntimeTexture wrapper owns no independently freed GPU pointer. ReleaseTexture
+- [x] RuntimeTexture wrapper owns no independently freed GPU pointer. ReleaseTexture
   flushes pending CPU runs, finishes GPU references, retires the resource, marks the
   wrapper disposed and deletes it using the generated ownership contract. Wrapper
   Dispose is idempotent while the wrapper is alive; final deletion occurs exactly
@@ -122,6 +122,19 @@ bool RetireAfterIdle(std::string& error);
   and preserved 3D ownership, then commits named files.
 
 ## Task 2: Reflected 2D GPU submission
+
+Task1 progress: manifest generation accepted in commit `31c535e`, parent focused
+verification12/12. Mutable-texture primitives accepted in commit `815957d` after
+fresh parent-run Docker/RPCS3 normal34/34 with12pixel checks and fault21/21 with
+8pixel checks on2026-09-25. Generated wrapper ownership accepted in `17efaf5`
+after41/41 current-source RPCS3 checks, with runner freshness followup `656605f`.
+Program loading and projection provider accepted in `94455c1`: final RPCS3
+38/38, zero program-owned GPU bytes after drain, source/artifact/input hashes
+and877-file generated aggregate independently verified. This is not
+GPU-batch-rendering acceptance. Direct wrapper
+Dispose must use the same CPU-flush/GPU-completion barrier as manager release.
+The resource owner must detach its CPU callback before manager destruction and
+must never dereference wrapper keys or content sources during final drain cleanup.
 
 **Create:** `src/platform/ps3/Ps3Batch2DRenderer.hpp`, `.cpp`,
 `src/platform/ps3/Ps3Batch2DUniformProvider.hpp`, `.cpp`,

@@ -34,8 +34,11 @@ ELF := $(BUILD_ROOT)/$(TARGET).elf
 SELF_OUT := $(BUILD_ROOT)/$(TARGET).self
 FAKE_SELF_OUT := $(BUILD_ROOT)/$(TARGET).fake.self
 MAP := $(BUILD_ROOT)/$(TARGET).map
-OBJ_ROOT := $(BUILD_ROOT)/obj
-SHADER_ROOT := $(BUILD_ROOT)/shaders
+# Per-run artifacts stay under BUILD_ROOT; only compiler outputs use this optional
+# persistent root. Build scripts fingerprint compile options before selecting it.
+NATIVE_OBJECT_ROOT ?= $(BUILD_ROOT)
+OBJ_ROOT := $(NATIVE_OBJECT_ROOT)/obj
+SHADER_ROOT := $(NATIVE_OBJECT_ROOT)/shaders
 SELF_STAGE := $(BUILD_ROOT)/self-stage
 
 # HELENGINE_DEFINES carries the explicit compile definitions selected by
