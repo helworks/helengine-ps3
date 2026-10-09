@@ -45,6 +45,9 @@ private:
     /// <summary>True after all GPU owners completed safe post-drain shutdown.</summary>
     bool ShutdownComplete;
 
+    /// <summary>Preallocates publication state and uploads one validated native GTF with exact GPU byte accounting.</summary>
+    Ps3RuntimeTexture* CreateOwnedGtf(const std::uint8_t* bytes, std::size_t byteCount);
+
     /// <summary>Validates bytes and creates an unpublished owner/wrapper pair before publishing the allocation.</summary>
     /// <param name="width">Validated source texture width.</param>
     /// <param name="height">Validated source texture height.</param>

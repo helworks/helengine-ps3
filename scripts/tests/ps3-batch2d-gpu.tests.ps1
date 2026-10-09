@@ -53,6 +53,8 @@ function Get-SourceSnapshot([string]$Root) {
         'src/platform/ps3/Ps3RuntimeTexture.hpp', 'src/platform/ps3/Ps3RuntimeTexture.cpp',
         'src/platform/ps3/Ps3AuthoredProgram.hpp', 'src/platform/ps3/Ps3AuthoredProgram.cpp',
         'src/platform/ps3/Ps3AuthoredTexture.hpp', 'src/platform/ps3/Ps3AuthoredTexture.cpp',
+        'src/platform/ps3/Ps3GtfTexture.hpp', 'src/platform/ps3/Ps3GtfTexture.cpp',
+        'src/platform/ps3/Ps3TexturePrefixStream.hpp',
         'src/platform/ps3/Ps3ShaderArtifactReader.hpp', 'src/platform/ps3/Ps3ShaderArtifactReader.cpp',
         'src/platform/ps3/Ps3RsxProgramValidator.hpp', 'src/platform/ps3/Ps3RsxProgramValidator.cpp',
         'src/platform/ps3/Ps3ContentStreamSource.hpp', 'src/platform/ps3/Ps3ContentStreamSource.cpp',

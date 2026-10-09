@@ -62,6 +62,7 @@ function Get-RepositoryInputSnapshot {
         'tests/native/Ps3AuthoredGpuTests.cpp',
         'src/platform/ps3/Ps3AuthoredProgram.cpp',
         'src/platform/ps3/Ps3AuthoredTexture.cpp',
+        'src/platform/ps3/Ps3GtfTexture.cpp',
         'src/platform/ps3/Ps3ShaderArtifactReader.cpp',
         'src/platform/ps3/Ps3RsxProgramValidator.cpp',
         'src/platform/ps3/Ps3Video.cpp'

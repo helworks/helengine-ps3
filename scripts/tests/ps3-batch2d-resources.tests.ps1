@@ -61,6 +61,7 @@ function Get-RepositoryInputSnapshot {
         'tests/ps3_batch2d_resources_tests.cpp',
         'src/platform/ps3/Ps3AuthoredProgram.cpp',
         'src/platform/ps3/Ps3AuthoredTexture.cpp',
+        'src/platform/ps3/Ps3GtfTexture.cpp',
         'src/platform/ps3/Ps3ShaderArtifactReader.cpp',
         'src/platform/ps3/Ps3RsxProgramValidator.cpp',
         'src/platform/ps3/Ps3Video.cpp'

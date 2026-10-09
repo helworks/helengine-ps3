@@ -58,6 +58,9 @@ public:
     bool InitializeRgba2D(Ps3Video& video, std::uint32_t width, std::uint32_t height,
         const std::uint8_t* rgba, std::size_t byteCount, std::string& error);
 
+    /// <summary>Owns a validated native 2D GTF texture without decoding its RSX format, storage layout or mipmaps.</summary>
+    bool InitializeGtf2D(Ps3Video& video, const std::uint8_t* bytes, std::size_t byteCount, std::string& error);
+
     /// <summary>Synchronizes submitted RSX work, then updates a checked rectangle of an owned linear RGBA8 2D texture.</summary>
     /// <param name="x">Left edge of the destination rectangle in texels.</param>
     /// <param name="y">Top edge of the destination rectangle in texels.</param>

@@ -125,7 +125,7 @@ public sealed class Ps3ContentStager {
 
     /// <summary>Refuses filesystem links that can disguise overlapping roots or redirect a declared source outside its root.</summary>
     /// <param name="path">Source file, root, or destination root whose existing ancestors must be ordinary directories.</param>
-    static void ValidateNoReparsePoints(string path) {
+    internal static void ValidateNoReparsePoints(string path) {
         string current = path;
         while (!string.IsNullOrEmpty(current)) {
             if ((File.Exists(current) || Directory.Exists(current))

@@ -24,6 +24,7 @@ SELF_STAGE := $(BUILD_ROOT)/self-stage
 SOURCES := \
 	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredProgram.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredTexture.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3GtfTexture.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3ShaderArtifactReader.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3RsxProgramValidator.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3Video.cpp \

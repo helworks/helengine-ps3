@@ -30,6 +30,7 @@ SOURCES := \
 	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredContentCache.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredProgram.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredTexture.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3GtfTexture.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DPrograms.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DRenderer.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DResources.cpp \

@@ -2,6 +2,8 @@
 
 #if defined(HELENGINE_PS3_HAS_GENERATED_CORE)
 #include <cstdio>
+#include <algorithm>
+#include <array>
 #include <exception>
 #include <stdexcept>
 #include <utility>
@@ -17,6 +19,7 @@
 #include "platform/ps3/Ps3RuntimeMaterial.hpp"
 #include "platform/ps3/Ps3ShaderArtifactReader.hpp"
 #include "platform/ps3/Ps3Video.hpp"
+#include "platform/ps3/Ps3TexturePrefixStream.hpp"
 
 namespace helengine::ps3 {
     namespace {
@@ -155,7 +158,7 @@ namespace helengine::ps3 {
         return owner;
     }
 
-    /// Consumes TextureAsset through the same source and requires exact RGBA32 bytes before RSX allocation.
+    /// Consumes native GTF or legacy RGBA32 through the same source and preserves RSX texture ownership.
     Ps3AuthoredTexture& Ps3AuthoredContentCache::ResolveTexture(const std::string& path) {
         ValidateContentPath(path);
         const auto found = Textures.find(path);
@@ -164,7 +167,34 @@ namespace helengine::ps3 {
         if (!stream) throw std::runtime_error("could not open required diffuse texture: " + path);
         std::unique_ptr<::Asset> asset;
         try {
-            asset.reset(::AssetSerializer::Deserialize(stream.get()));
+            const std::size_t length = stream->Length();
+            if (length < 4u || length > 65u * 1024u * 1024u) throw std::runtime_error("diffuse texture exceeds its input envelope: " + path);
+            std::array<std::uint8_t, 4u> prefix{};
+            std::size_t cursor = 0u;
+            while (cursor < prefix.size()) {
+                const std::size_t read = stream->Read(prefix.data(), cursor, prefix.size() - cursor);
+                if (read == 0u || read > prefix.size() - cursor) throw std::runtime_error("diffuse texture signature is truncated: " + path);
+                cursor += read;
+            }
+            if (prefix[0] == 2u) {
+                std::vector<std::uint8_t> gtf(length);
+                std::copy(prefix.begin(), prefix.end(), gtf.begin());
+                while (cursor < length) {
+                    const std::size_t read = stream->Read(gtf.data(), cursor, length - cursor);
+                    if (read == 0u || read > length - cursor) throw std::runtime_error("diffuse GTF is truncated: " + path);
+                    cursor += read;
+                }
+                DisposeStream(stream);
+                std::map<std::string, std::unique_ptr<Ps3AuthoredTexture>> pending;
+                pending.emplace(path, std::make_unique<Ps3AuthoredTexture>());
+                Ps3AuthoredTexture& owner = *pending.begin()->second;
+                std::string error;
+                if (!owner.InitializeGtf2D(Video, gtf.data(), gtf.size(), error)) throw std::runtime_error("diffuse GTF " + path + ": " + error);
+                Textures.merge(pending); ++TexturesCreated;
+                return owner;
+            }
+            Ps3TexturePrefixStream replay(*stream, prefix);
+            asset.reset(::AssetSerializer::Deserialize(&replay));
             DisposeStream(stream);
         } catch (...) {
             DisposeFailedStream(stream);

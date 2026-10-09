@@ -89,6 +89,12 @@ public static class Ps3PlatformDefinitionFactory {
             [codegen],
             [new PlatformStorageProfileDefinition("loose-files", "Loose Files", PlatformStorageProfileKind.LooseFiles, "ps3-loose-files", false)],
             [new PlatformMediaProfileDefinition("ps3-self", "PlayStation 3 SELF", PlatformMediaLayoutKind.InstallTree, false, true)],
-            new RuntimeGenerationContract(RuntimeMaterialResolutionMode.CookedPlatformOwned, true, PackagedPathPolicy.ContentRelativeOnly));
+            new RuntimeGenerationContract(RuntimeMaterialResolutionMode.CookedPlatformOwned, true, PackagedPathPolicy.ContentRelativeOnly),
+            assetCookCapabilities: [
+                new PlatformAssetCookCapabilityDefinition("texture", "runtime-texture", PlatformAssetCookOwnershipKind.BuilderOwned,
+                    "ps3-texture", "{\"maxResolution\":4096,\"colorFormat\":\"Rgba32\",\"alphaPrecision\":\"A8\"}", Ps3TextureFormatCapabilities.Create()),
+                new PlatformAssetCookCapabilityDefinition("font-atlas-texture", "runtime-texture", PlatformAssetCookOwnershipKind.BuilderOwned,
+                    "ps3-texture", "{\"maxResolution\":4096,\"colorFormat\":\"Rgba32\",\"alphaPrecision\":\"A8\"}", Ps3TextureFormatCapabilities.Create())
+            ]);
     }
 }

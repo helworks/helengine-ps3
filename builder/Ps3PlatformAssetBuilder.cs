@@ -4,6 +4,7 @@ using helengine.baseplatform.Reporting;
 using helengine.baseplatform.Requests;
 using helengine.baseplatform.Results;
 using helengine;
+using helengine.baseplatform.Manifest;
 
 namespace helengine.ps3.builder;
 
@@ -129,10 +130,21 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder, IPlatformSh
             // Content is staged before the native build, because the build installs the staged
             // tree beside the executable and compiles the catalog that names its scenes.
             string packageSourceRoot = ResolvePackageSourceRoot(request.WorkingRoot);
+            List<PlatformBuildArtifact> artifacts = new(request.Manifest.CookedArtifacts);
+            HashSet<string> outputPaths = new(artifacts.Select(artifact => Ps3ContentStager.NormalizeRelativePath(artifact.RelativePath)), StringComparer.OrdinalIgnoreCase);
+            PlatformCookWorkItem[] cookWorkItems = request.Manifest.PlatformCookWorkItems ?? [];
+            foreach (PlatformCookWorkItem item in cookWorkItems) {
+                if (!outputPaths.Add(Ps3ContentStager.NormalizeRelativePath(item.OutputRelativePath)))
+                    throw new InvalidDataException($"PS3 cook output path collision: '{item.OutputRelativePath}'.");
+            }
+            foreach (PlatformCookWorkItem item in cookWorkItems) {
+                cancellationToken.ThrowIfCancellationRequested();
+                artifacts.Add(new Ps3PlatformCookWorkItemExecutor().Execute(item, packageSourceRoot));
+            }
             string stagingRoot = Path.Combine(request.WorkingRoot, "ps3-authored-content");
             progressReporter.Report(new PlatformBuildProgressUpdate("Stage Content", "manifest", 0, 1, "Staging declared PlayStation 3 cooked artifacts."));
             IReadOnlyList<string> staged = new Ps3ContentStager().Stage(
-                request.Manifest.CookedArtifacts,
+                artifacts,
                 packageSourceRoot,
                 stagingRoot,
                 cancellationToken);

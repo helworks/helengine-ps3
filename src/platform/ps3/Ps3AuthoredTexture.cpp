@@ -8,6 +8,7 @@
 #include <string>
 
 #include "platform/ps3/Ps3Video.hpp"
+#include "platform/ps3/Ps3GtfTexture.hpp"
 
 namespace helengine::ps3 {
 namespace {
@@ -151,6 +152,30 @@ bool Ps3AuthoredTexture::InitializeRgba2D(Ps3Video& video, std::uint32_t width, 
     return true;
 }
 
+/// <summary>Validates native GTF bytes before allocating and publishing an RSX-local descriptor.</summary>
+bool Ps3AuthoredTexture::InitializeGtf2D(Ps3Video& video, const std::uint8_t* bytes, std::size_t byteCount, std::string& error) {
+    error.clear();
+    if (Initialized || ShutdownComplete) { SetFailure(error, "initialize-gtf", "owner is already initialized or retired"); return false; }
+    if (!ValidateVideo(video, "initialize-gtf", error)) return false;
+    Ps3GtfTexture source;
+    if (!Ps3GtfTexture::TryParse(bytes, byteCount, source, error)) return false;
+    void* allocation = rsxMemalign(TextureAlignment, source.PixelBytes);
+    if (allocation == nullptr) { SetFailure(error, "initialize-gtf", "RSX allocation failed"); return false; }
+    std::uint32_t offset = 0u;
+    if (rsxAddressToOffset(allocation, &offset) != 0) {
+        rsxFree(allocation); SetFailure(error, "initialize-gtf", "RSX address resolution failed"); return false;
+    }
+    std::memcpy(allocation, source.Pixels, source.PixelBytes);
+    gcmTexture descriptor{};
+    descriptor.format = source.Format; descriptor.mipmap = source.MipCount;
+    descriptor.dimension = GCM_TEXTURE_DIMS_2D; descriptor.cubemap = GCM_FALSE;
+    descriptor.remap = source.Remap; descriptor.width = source.Width; descriptor.height = source.Height;
+    descriptor.depth = 1u; descriptor.location = GCM_LOCATION_RSX; descriptor.pitch = source.Pitch; descriptor.offset = offset;
+    VideoValue = &video; TextureValue = descriptor; TextureBuffer = allocation;
+    OwnedGpuBytesValue = source.PixelBytes; Initialized = true; ShutdownComplete = false;
+    return true;
+}
+
 bool Ps3AuthoredTexture::UpdateRgbaRegion(std::uint32_t x, std::uint32_t y,
     std::uint32_t width, std::uint32_t height, const std::uint8_t* rgba,
     std::size_t byteCount, std::size_t rowPitch, std::string& error) {
@@ -169,8 +194,9 @@ bool Ps3AuthoredTexture::UpdateRgbaRegion(std::uint32_t x, std::uint32_t y,
     }
     if (TextureValue.dimension != GCM_TEXTURE_DIMS_2D || TextureValue.cubemap != GCM_FALSE
         || (TextureValue.format & GCM_TEXTURE_FORMAT_LIN) != GCM_TEXTURE_FORMAT_LIN
+        || (TextureValue.format & 0x1fu) != GCM_TEXTURE_FORMAT_A8R8G8B8 || TextureValue.mipmap != 1u
         || TextureValue.pitch == 0u) {
-        SetFailure(error, "update-rgba-region", "updates require an owned linear non-cube 2D texture");
+        SetFailure(error, "update-rgba-region", "RGBA updates require a single-level linear A8R8G8B8 2D texture");
         return false;
     }
     if (rgba == nullptr) {
@@ -337,8 +363,12 @@ bool Ps3AuthoredTexture::BindWithFilter(std::uint32_t textureUnit, std::uint32_t
     const u8 unit = static_cast<u8>(textureUnit);
     rsxInvalidateTextureCache(context, GCM_INVALIDATE_TEXTURE);
     rsxLoadTexture(context, unit, &TextureValue);
-    rsxTextureControl(context, unit, GCM_TRUE, 0u, 0u, GCM_TEXTURE_MAX_ANISO_1);
-    rsxTextureFilter(context, unit, 0u, filter, filter,
+    const std::uint32_t code = TextureValue.format & 0x1fu;
+    if (code == 0x1bu || code == 0x1cu) filter = GCM_TEXTURE_NEAREST;
+    const std::uint32_t minFilter = TextureValue.mipmap > 1u
+        ? (filter == GCM_TEXTURE_LINEAR ? GCM_TEXTURE_LINEAR_MIPMAP_LINEAR : GCM_TEXTURE_NEAREST_MIPMAP_NEAREST) : filter;
+    rsxTextureControl(context, unit, GCM_TRUE, 0u, static_cast<std::uint16_t>((TextureValue.mipmap - 1u) << 8u), GCM_TEXTURE_MAX_ANISO_1);
+    rsxTextureFilter(context, unit, 0u, minFilter, filter,
         GCM_TEXTURE_CONVOLUTION_QUINCUNX);
     rsxTextureWrapMode(context, unit, GCM_TEXTURE_CLAMP_TO_EDGE,
         GCM_TEXTURE_CLAMP_TO_EDGE, GCM_TEXTURE_CLAMP_TO_EDGE,

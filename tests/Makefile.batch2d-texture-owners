@@ -21,6 +21,7 @@ SOURCES := \
 	$(SRC_ROOT)/src/platform/ps3/Ps3RuntimeTexture.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3Batch2DResources.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3AuthoredTexture.cpp \
+	$(SRC_ROOT)/src/platform/ps3/Ps3GtfTexture.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3ContentStreamSource.cpp \
 	$(SRC_ROOT)/src/platform/ps3/Ps3Video.cpp \
 	$(TEST_SOURCE)

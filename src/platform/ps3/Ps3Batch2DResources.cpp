@@ -17,6 +17,8 @@
 #include "platform/ps3/Ps3Batch2DFlushGuard.hpp"
 #include "platform/ps3/Ps3RuntimeTexture.hpp"
 #include "platform/ps3/Ps3Video.hpp"
+#include "platform/ps3/Ps3GtfTexture.hpp"
+#include "platform/ps3/Ps3TexturePrefixStream.hpp"
 #include "runtime/native_exceptions.hpp"
 #include "system/io/stream.hpp"
 
@@ -178,6 +180,23 @@ Ps3RuntimeTexture* Ps3Batch2DResources::CreateOwned(std::uint32_t width, std::ui
     return wrapper.release();
 }
 
+/// <summary>Preserves native RSX storage and publishes its wrapper only after all allocations and upload checks pass.</summary>
+Ps3RuntimeTexture* Ps3Batch2DResources::CreateOwnedGtf(const std::uint8_t* bytes, std::size_t byteCount) {
+    RequireMutable("create GTF texture");
+    Ps3GtfTexture descriptor;
+    std::string error;
+    if (!Ps3GtfTexture::TryParse(bytes, byteCount, descriptor, error)) throw std::invalid_argument("PS3 GTF texture is invalid: " + error);
+    if (OwnedGpuBytesValue > std::numeric_limits<std::size_t>::max() - descriptor.PixelBytes)
+        throw std::overflow_error("PS3 GTF total GPU byte count overflows size_t");
+    std::unique_ptr<Ps3RuntimeTexture> wrapper(new Ps3RuntimeTexture(*this, descriptor.Width, descriptor.Height));
+    std::map<Ps3RuntimeTexture*, std::unique_ptr<Ps3AuthoredTexture>> pending;
+    auto inserted = pending.emplace(wrapper.get(), std::unique_ptr<Ps3AuthoredTexture>(new Ps3AuthoredTexture()));
+    if (!inserted.first->second->InitializeGtf2D(Video, bytes, byteCount, error)) throw std::runtime_error("PS3 GTF upload failed: " + error);
+    Records.merge(pending);
+    OwnedGpuBytesValue += descriptor.PixelBytes;
+    return wrapper.release();
+}
+
 /// <summary>Validates and snapshots a caller-owned generated asset before creating renderer-owned GPU storage.</summary>
 Ps3RuntimeTexture* Ps3Batch2DResources::BuildRaw(const ::TextureAsset& asset) {
     RequireMutable("build raw texture");
@@ -210,10 +229,29 @@ Ps3RuntimeTexture* Ps3Batch2DResources::BuildCooked(::IContentStreamSource& sour
     std::unique_ptr<::Asset> asset;
     try {
         const std::size_t length = input->Length();
-        if (length == 0u || length > MaximumCookedEnvelopeBytes) {
+        if (length < 4u || length > MaximumCookedEnvelopeBytes) {
             throw std::runtime_error("texture content is empty or exceeds its 64 MiB payload plus 1 MiB metadata envelope: " + path);
         }
-        asset.reset(::AssetSerializer::Deserialize(input.get()));
+        std::array<std::uint8_t, 4u> prefix{};
+        std::size_t cursor = 0u;
+        while (cursor < prefix.size()) {
+            const std::size_t read = input->Read(prefix.data(), cursor, prefix.size() - cursor);
+            if (read == 0u || read > prefix.size() - cursor) throw std::runtime_error("texture content signature is truncated: " + path);
+            cursor += read;
+        }
+        if (prefix[0] == 2u) {
+            std::vector<std::uint8_t> gtf(length);
+            std::copy(prefix.begin(), prefix.end(), gtf.begin());
+            while (cursor < length) {
+                const std::size_t read = input->Read(gtf.data(), cursor, length - cursor);
+                if (read == 0u || read > length - cursor) throw std::runtime_error("GTF content payload is truncated: " + path);
+                cursor += read;
+            }
+            DisposeStream(input);
+            return CreateOwnedGtf(gtf.data(), gtf.size());
+        }
+        Ps3TexturePrefixStream replay(*input, prefix);
+        asset.reset(::AssetSerializer::Deserialize(&replay));
         DisposeStream(input);
     } catch (::Exception* exception) {
         DisposeFailedStream(input);
