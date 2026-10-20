@@ -307,7 +307,7 @@ public sealed class Ps3MaterialCookerTests {
             "debug",
             Ps3MaterialSchemaIds.StandardGraphicsProfileId,
             Ps3MaterialSchemaIds.StandardSchemaId,
-            CreateFields("#FFFFFFFF"));
+            CreateFields("#FFFFFFFF"), numericPolicy: global::helengine.NumericPrecisionPolicy.Default);
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
             () => new Ps3PlatformAssetBuilder().CookMaterial(request));
@@ -325,7 +325,7 @@ public sealed class Ps3MaterialCookerTests {
             "debug",
             Ps3MaterialSchemaIds.StandardGraphicsProfileId,
             "dc-standard-v1",
-            CreateFields("#FFFFFFFF"));
+            CreateFields("#FFFFFFFF"), numericPolicy: global::helengine.NumericPrecisionPolicy.Default);
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
             () => new Ps3PlatformAssetBuilder().CookMaterial(request));
@@ -343,7 +343,7 @@ public sealed class Ps3MaterialCookerTests {
             "debug",
             "ps3-debug",
             Ps3MaterialSchemaIds.StandardSchemaId,
-            CreateFields("#FFFFFFFF"));
+            CreateFields("#FFFFFFFF"), numericPolicy: global::helengine.NumericPrecisionPolicy.Default);
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
             () => new Ps3PlatformAssetBuilder().CookMaterial(request));
@@ -372,7 +372,7 @@ public sealed class Ps3MaterialCookerTests {
             "debug",
             Ps3MaterialSchemaIds.StandardGraphicsProfileId,
             Ps3MaterialSchemaIds.StandardSchemaId,
-            fields);
+            fields, numericPolicy: global::helengine.NumericPrecisionPolicy.Default);
     }
 
     /// <summary>Builds a case-insensitive field map for one base-color value and schema defaults.</summary>
