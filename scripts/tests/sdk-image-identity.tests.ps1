@@ -17,7 +17,7 @@ $layerA = 'sha256:' + ('a' * 64)
 $layerB = 'sha256:' + ('b' * 64)
 $configPath = Write-JsonBytes 'config.json' @{ os='linux'; architecture='amd64'; rootfs=@{type='layers'; diff_ids=@($layerA,$layerB)} }
 $configId = 'sha256:' + (Get-FileHash $configPath -Algorithm SHA256).Hash.ToLowerInvariant()
-$manifestPath = Write-JsonBytes 'manifest.json' @{schemaVersion=2; mediaType='application/vnd.oci.image.manifest.v1+json'; config=@{digest=$configId;size=(Get-Item $configPath).Length}}
+$manifestPath = Write-JsonBytes 'manifest.json' @{schemaVersion=2; mediaType='application/vnd.oci.image.manifest.v1+json'; config=@{mediaType='application/vnd.oci.image.config.v1+json';digest=$configId;size=(Get-Item $configPath).Length};layers=@(@{digest=$layerA},@{digest=$layerB})}
 $pin = 'sha256:' + (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $proof = Read-Ps3SdkImageProof $pin $FixtureRoot
 foreach ($actualId in @($pin,$configId)) {

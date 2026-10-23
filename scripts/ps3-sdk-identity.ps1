@@ -3,18 +3,21 @@
 function Read-Ps3SdkImageProof {
     param([string]$CanonicalImageId, [string]$IdentityRoot)
     if ($CanonicalImageId -cnotmatch '^sha256:[0-9a-f]{64}$') { throw 'Invalid canonical SDK digest.' }
+    if (-not [IO.Path]::IsPathRooted($IdentityRoot)) { throw 'SDK identity proof requires an absolute root.' }
     $manifestPath = Join-Path $IdentityRoot 'manifest.json'
     $configPath = Join-Path $IdentityRoot 'config.json'
     $manifestDigest = 'sha256:' + (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($manifestDigest -cne $CanonicalImageId) { throw 'SDK manifest bytes do not match the locked digest.' }
     $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
     if ($manifest.schemaVersion -ne 2 -or $manifest.mediaType -cnotin @('application/vnd.oci.image.manifest.v1+json','application/vnd.docker.distribution.manifest.v2+json')) { throw 'Unsupported SDK image manifest.' }
+    if ($manifest.config.mediaType -cnotin @('application/vnd.oci.image.config.v1+json','application/vnd.docker.container.image.v1+json')) { throw 'Unsupported SDK config media type.' }
     $configDigest = 'sha256:' + (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($configDigest -cne $manifest.config.digest -or (Get-Item -LiteralPath $configPath).Length -ne $manifest.config.size) { throw 'SDK config bytes do not match the manifest descriptor.' }
     $config = [IO.File]::ReadAllText($configPath) | ConvertFrom-Json
     if ($config.os -cne 'linux' -or $config.architecture -cne 'amd64' -or $config.rootfs.type -cne 'layers') { throw 'SDK config is not a linux/amd64 layered image.' }
     $layers = @($config.rootfs.diff_ids)
     if ($layers.Count -eq 0) { throw 'SDK config contains no filesystem layers.' }
+    if (@($manifest.layers).Count -ne $layers.Count) { throw 'SDK manifest and config layer counts differ.' }
     foreach ($layer in $layers) { if ($layer -cnotmatch '^sha256:[0-9a-f]{64}$') { throw 'Invalid SDK filesystem digest.' } }
     return [pscustomobject]@{ CanonicalImageId=$CanonicalImageId; ConfigImageId=$configDigest; Layers=$layers; ManifestSha256=$manifestDigest.Substring(7); ConfigSha256=$configDigest.Substring(7) }
 }
