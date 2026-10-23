@@ -7,8 +7,14 @@ namespace helengine.ps3.builder;
 
 /// <summary>Executes requested PS3 texture cooks and returns declared receipts for content staging.</summary>
 public sealed class Ps3PlatformCookWorkItemExecutor {
-    /// <summary>Validates ownership and paths, cooks the resolved texture setting and declares its exact resulting bytes.</summary>
+    /// <summary>Preserves the host's numeric envelope for callers without an explicit consuming build policy.</summary>
     public PlatformBuildArtifact Execute(PlatformCookWorkItem item, string packageSourceRoot) {
+        return Execute(item, packageSourceRoot, RealRepresentation.Policy);
+    }
+
+    /// <summary>Validates ownership and paths, cooks the resolved texture setting and declares its exact resulting bytes.</summary>
+    public PlatformBuildArtifact Execute(PlatformCookWorkItem item, string packageSourceRoot, NumericPrecisionPolicy numericPolicy) {
+        RealBinaryCodec.ValidatePolicy(numericPolicy);
         ArgumentNullException.ThrowIfNull(item);
         if (item.TargetPlatformId != "ps3" || item.TargetArtifactKind != "runtime-texture"
             || (item.SourceAssetKind != "texture" && item.SourceAssetKind != "font-atlas-texture"))
@@ -36,7 +42,7 @@ public sealed class Ps3PlatformCookWorkItemExecutor {
             try {
                 processed = new TextureAssetProcessor().Apply(decoded, new TextureAssetProcessorSettings {
                     MaxResolution = settings.MaxResolution, ColorFormat = TextureAssetColorFormat.Rgba32, AlphaPrecision = settings.AlphaPrecision });
-                bytes = new Ps3TextureCooker().Cook(processed, settings);
+                bytes = new Ps3TextureCooker().Cook(processed, settings, numericPolicy);
             } finally { if (!ReferenceEquals(processed, decoded)) processed?.Dispose(); }
         }
         Directory.CreateDirectory(Path.GetDirectoryName(destination));

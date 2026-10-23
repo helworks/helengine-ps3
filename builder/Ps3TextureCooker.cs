@@ -5,13 +5,19 @@ namespace helengine.ps3.builder;
 
 /// <summary>Writes standard GTF files from processed RGBA textures with deterministic RSX layouts and mipmaps.</summary>
 public sealed class Ps3TextureCooker {
-    /// <summary>Converts a processed source into native texels; the historical RGBA setting remains an engine asset.</summary>
+    /// <summary>Preserves the managed host's envelope for existing callers without a consuming build policy.</summary>
     public byte[] Cook(TextureAsset texture, TextureAssetProcessorSettings settings) {
+        return Cook(texture, settings, RealRepresentation.Policy);
+    }
+
+    /// <summary>Converts processed native texels or writes the RGBA engine asset with the consuming build's numeric policy.</summary>
+    public byte[] Cook(TextureAsset texture, TextureAssetProcessorSettings settings, NumericPrecisionPolicy numericPolicy) {
+        RealBinaryCodec.ValidatePolicy(numericPolicy);
         ArgumentNullException.ThrowIfNull(texture); ArgumentNullException.ThrowIfNull(settings);
         _ = Ps3TextureCookSettingsSerializer.Deserialize(Ps3TextureCookSettingsSerializer.Serialize(settings));
         if (texture.ColorFormat != TextureAssetColorFormat.Rgba32 || texture.Colors == null || texture.Colors.Length != checked(texture.Width * texture.Height * 4))
             throw new InvalidDataException("PS3 cooking requires a processed RGBA32 texture.");
-        if (settings.ColorFormatId == "Rgba32") return helengine.files.AssetSerializer.SerializeToBytes(texture);
+        if (settings.ColorFormatId == "Rgba32") return helengine.files.AssetSerializer.SerializeToBytes(texture, numericPolicy);
         PlayStation3TextureFormat format = PlayStation3TextureFormatCatalog.Resolve(settings.ColorFormatId, out bool linear, out bool mipmapped);
         int width = texture.Width, height = texture.Height, mips = mipmapped ? PlayStation3TextureFormatCatalog.GetMipCount(width, height) : 1;
         int pitch = linear ? format.GetRowBytes(width) : 0;

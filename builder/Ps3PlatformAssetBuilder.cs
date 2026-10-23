@@ -139,7 +139,7 @@ public sealed class Ps3PlatformAssetBuilder : IPlatformAssetBuilder, IPlatformSh
             }
             foreach (PlatformCookWorkItem item in cookWorkItems) {
                 cancellationToken.ThrowIfCancellationRequested();
-                artifacts.Add(new Ps3PlatformCookWorkItemExecutor().Execute(item, packageSourceRoot));
+                artifacts.Add(new Ps3PlatformCookWorkItemExecutor().Execute(item, packageSourceRoot, request.NumericPolicy));
             }
             string stagingRoot = Path.Combine(request.WorkingRoot, "ps3-authored-content");
             progressReporter.Report(new PlatformBuildProgressUpdate("Stage Content", "manifest", 0, 1, "Staging declared PlayStation 3 cooked artifacts."));
