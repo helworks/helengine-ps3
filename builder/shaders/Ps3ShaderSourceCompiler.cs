@@ -116,9 +116,20 @@ public sealed class Ps3ShaderSourceCompiler {
 
     /// <summary>Finds the packaged SPIRV-Cross library beside the compiler assembly.</summary>
     /// <param name="compilerAssemblyLocation">Fully qualified file location reported by the compiler assembly.</param>
-    /// <returns>The absolute path to that package's Windows x64 SPIRV-Cross library.</returns>
+    /// <returns>The absolute path to that package's native library for the current operating system and process architecture.</returns>
     /// <exception cref="ArgumentException">The assembly location is missing, not fully qualified, or lacks a file component.</exception>
     internal static string ResolveSpirvCrossLibraryPath(string compilerAssemblyLocation) {
+        string host = OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsMacOS() ? "osx" : OperatingSystem.IsLinux() ? "linux"
+            : throw new PlatformNotSupportedException("The PS3 shader compiler does not package SPIRV-Cross for this host OS.");
+        return ResolveSpirvCrossLibraryPath(compilerAssemblyLocation, host, RuntimeInformation.ProcessArchitecture);
+    }
+
+    /// <summary>Maps one supported host and process architecture to the unchanged SPIRV-Cross package layout.</summary>
+    /// <param name="compilerAssemblyLocation">Fully qualified compiler assembly file location.</param>
+    /// <param name="host">NuGet operating-system prefix: win, osx or linux.</param>
+    /// <param name="architecture">Architecture of the managed compiler process.</param>
+    /// <returns>The native library path beside the compiler assembly, preserving its directory.</returns>
+    internal static string ResolveSpirvCrossLibraryPath(string compilerAssemblyLocation, string host, Architecture architecture) {
         if (string.IsNullOrWhiteSpace(compilerAssemblyLocation) || !Path.IsPathFullyQualified(compilerAssemblyLocation)) {
             throw new ArgumentException("The PS3 compiler assembly must have a fully qualified file location.", nameof(compilerAssemblyLocation));
         }
@@ -130,7 +141,14 @@ public sealed class Ps3ShaderSourceCompiler {
             throw new ArgumentException("The PS3 compiler assembly location must include both a directory and a file name.", nameof(compilerAssemblyLocation));
         }
 
-        return Path.Combine(assemblyDirectory, "runtimes", "win-x64", "native", "spirv-cross.dll");
+        string fileName = host switch {
+            "win" => "spirv-cross.dll",
+            "osx" => "libspirv-cross.dylib",
+            "linux" => "libspirv-cross.so",
+            _ => throw new PlatformNotSupportedException("The PS3 shader compiler does not package SPIRV-Cross for this host OS.")
+        };
+        string runtimeIdentifier = host + "-" + architecture.ToString().ToLowerInvariant();
+        return Path.Combine(assemblyDirectory, "runtimes", runtimeIdentifier, "native", fileName);
     }
 
     /// <summary>Reflects compiler metadata, assigns stable names, and emits legacy GLSL without source rewriting.</summary>
