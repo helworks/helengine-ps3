@@ -71,22 +71,22 @@ namespace helengine::ps3 {
         /// in each vector's fourth element. No SDK output or shared shader is rewritten.
         Ps3Matrix4 ToSdkVectors(const ::float4x4& matrix) {
             Ps3Matrix4 result;
-            result.Values[0] = matrix.M11;
-            result.Values[1] = matrix.M21;
-            result.Values[2] = matrix.M31;
-            result.Values[3] = matrix.M41;
-            result.Values[4] = matrix.M12;
-            result.Values[5] = matrix.M22;
-            result.Values[6] = matrix.M32;
-            result.Values[7] = matrix.M42;
-            result.Values[8] = matrix.M13;
-            result.Values[9] = matrix.M23;
-            result.Values[10] = matrix.M33;
-            result.Values[11] = matrix.M43;
-            result.Values[12] = matrix.M14;
-            result.Values[13] = matrix.M24;
-            result.Values[14] = matrix.M34;
-            result.Values[15] = matrix.M44;
+            result.Values[0] = static_cast<float>(matrix.M11);
+            result.Values[1] = static_cast<float>(matrix.M21);
+            result.Values[2] = static_cast<float>(matrix.M31);
+            result.Values[3] = static_cast<float>(matrix.M41);
+            result.Values[4] = static_cast<float>(matrix.M12);
+            result.Values[5] = static_cast<float>(matrix.M22);
+            result.Values[6] = static_cast<float>(matrix.M32);
+            result.Values[7] = static_cast<float>(matrix.M42);
+            result.Values[8] = static_cast<float>(matrix.M13);
+            result.Values[9] = static_cast<float>(matrix.M23);
+            result.Values[10] = static_cast<float>(matrix.M33);
+            result.Values[11] = static_cast<float>(matrix.M43);
+            result.Values[12] = static_cast<float>(matrix.M14);
+            result.Values[13] = static_cast<float>(matrix.M24);
+            result.Values[14] = static_cast<float>(matrix.M34);
+            result.Values[15] = static_cast<float>(matrix.M44);
             return result;
         }
 
@@ -112,10 +112,10 @@ namespace helengine::ps3 {
 
         /// Packs the authored RGBA camera clear color into RSX A8R8G8B8 order.
         u32 PackCameraColor(const ::float4& color) {
-            return (ToColorByte(color.W) << 24) |
-                   (ToColorByte(color.X) << 16) |
-                   (ToColorByte(color.Y) << 8) |
-                   ToColorByte(color.Z);
+            return (ToColorByte(static_cast<float>(color.W)) << 24) |
+                   (ToColorByte(static_cast<float>(color.X)) << 16) |
+                   (ToColorByte(static_cast<float>(color.Y)) << 8) |
+                   ToColorByte(static_cast<float>(color.Z));
         }
 
         /// Packs normalized depth and stencil into the RSX Z24S8 clear register.
@@ -130,10 +130,10 @@ namespace helengine::ps3 {
         }
 
         /// Converts a finite camera edge to the pixel-center convention shared with 2D.
-        int32_t PixelEdge(double edge) {
-            const double rounded = std::ceil(edge - 0.5);
-            if (!std::isfinite(rounded) || rounded < 0.0 ||
-                rounded > static_cast<double>(std::numeric_limits<int32_t>::max())) {
+        int32_t PixelEdge(RealEvaluation edge) {
+            const RealEvaluation rounded = RealMath::Ceiling(edge - RealEvaluation(0.5f));
+            if (!RealEvaluation::IsFinite(rounded) || rounded < 0.0 ||
+                static_cast<double>(rounded) > static_cast<double>(std::numeric_limits<int32_t>::max())) {
                 throw std::runtime_error("PS3 3D camera viewport edge is outside supported integer pixels");
             }
             return static_cast<int32_t>(rounded);
@@ -143,15 +143,15 @@ namespace helengine::ps3 {
         ::float4 ResolvePixelViewport(::float4 requested, unsigned width, unsigned height) {
             const ::float4 resolved = ::CameraViewportResolver::ResolveViewport(
                 requested, static_cast<double>(width), static_cast<double>(height));
-            if (!std::isfinite(resolved.X) || !std::isfinite(resolved.Y) ||
-                !std::isfinite(resolved.Z) || !std::isfinite(resolved.W) ||
+            if (!RealEvaluation::IsFinite(resolved.X) || !RealEvaluation::IsFinite(resolved.Y) ||
+                !RealEvaluation::IsFinite(resolved.Z) || !RealEvaluation::IsFinite(resolved.W) ||
                 resolved.X < 0.0f || resolved.Y < 0.0f || resolved.Z <= 0.0f || resolved.W <= 0.0f) {
                 throw std::runtime_error("PS3 3D camera viewport must be finite and positive");
             }
             const int32_t left = PixelEdge(resolved.X);
             const int32_t top = PixelEdge(resolved.Y);
-            const int32_t right = PixelEdge(static_cast<double>(resolved.X) + resolved.Z);
-            const int32_t bottom = PixelEdge(static_cast<double>(resolved.Y) + resolved.W);
+            const int32_t right = PixelEdge(resolved.X + resolved.Z);
+            const int32_t bottom = PixelEdge(resolved.Y + resolved.W);
             if (right <= left || bottom <= top ||
                 static_cast<uint64_t>(right) > width || static_cast<uint64_t>(bottom) > height) {
                 throw std::runtime_error("PS3 3D camera viewport extends outside the backbuffer");
@@ -209,20 +209,20 @@ namespace helengine::ps3 {
             if (context == nullptr) {
                 throw std::logic_error("PS3 3D viewport requires a live video context");
             }
-            const u16 width = static_cast<u16>(pixelViewport.Z);
-            const u16 height = static_cast<u16>(pixelViewport.W);
+            const u16 width = static_cast<u16>(static_cast<int32_t>(pixelViewport.Z));
+            const u16 height = static_cast<u16>(static_cast<int32_t>(pixelViewport.W));
             const f32 scale[4] = { width * 0.5f, height * -0.5f, 0.5f, 0.0f };
             // SDK bounds and transform both use the tested camera origin; they do not double-translate.
             const f32 offset[4] = {
-                pixelViewport.X + width * 0.5f,
-                pixelViewport.Y + height * 0.5f,
+                static_cast<float>(pixelViewport.X + width * 0.5f),
+                static_cast<float>(pixelViewport.Y + height * 0.5f),
                 0.5f,
                 0.0f
             };
-            rsxSetViewport(context, static_cast<u16>(pixelViewport.X),
-                static_cast<u16>(pixelViewport.Y), width, height, 0.0f, 1.0f, scale, offset);
-            rsxSetScissor(context, static_cast<u16>(pixelViewport.X),
-                static_cast<u16>(pixelViewport.Y), width, height);
+            rsxSetViewport(context, static_cast<u16>(static_cast<int32_t>(pixelViewport.X)),
+                static_cast<u16>(static_cast<int32_t>(pixelViewport.Y)), width, height, 0.0f, 1.0f, scale, offset);
+            rsxSetScissor(context, static_cast<u16>(static_cast<int32_t>(pixelViewport.X)),
+                static_cast<u16>(static_cast<int32_t>(pixelViewport.Y)), width, height);
             for (u8 clipIndex = 0; clipIndex < 8; ++clipIndex) {
                 rsxSetViewportClip(context, clipIndex,
                     static_cast<u16>(video.Width()), static_cast<u16>(video.Height()));
@@ -338,9 +338,9 @@ namespace helengine::ps3 {
             if (light != nullptr) {
                 const ::float4 color = light->get_Color();
                 const float intensity = light->get_Intensity();
-                AmbientLight[0] = color.X * intensity;
-                AmbientLight[1] = color.Y * intensity;
-                AmbientLight[2] = color.Z * intensity;
+                AmbientLight[0] = static_cast<float>(color.X * intensity);
+                AmbientLight[1] = static_cast<float>(color.Y * intensity);
+                AmbientLight[2] = static_cast<float>(color.Z * intensity);
                 AmbientLight[3] = 1.0f;
             }
         }
@@ -352,13 +352,13 @@ namespace helengine::ps3 {
                 const float intensity = light->get_Intensity();
                 const ::float3 direction = ::LightDirectionUtility::GetLightDirection(light);
                 HasDirectionalLight = true;
-                DirectionalLight[0] = color.X * intensity;
-                DirectionalLight[1] = color.Y * intensity;
-                DirectionalLight[2] = color.Z * intensity;
+                DirectionalLight[0] = static_cast<float>(color.X * intensity);
+                DirectionalLight[1] = static_cast<float>(color.Y * intensity);
+                DirectionalLight[2] = static_cast<float>(color.Z * intensity);
                 DirectionalLight[3] = 1.0f;
-                DirectionalDirection[0] = direction.X;
-                DirectionalDirection[1] = direction.Y;
-                DirectionalDirection[2] = direction.Z;
+                DirectionalDirection[0] = static_cast<float>(direction.X);
+                DirectionalDirection[1] = static_cast<float>(direction.Y);
+                DirectionalDirection[2] = static_cast<float>(direction.Z);
                 DirectionalDirection[3] = 0.0f;
             }
         }
@@ -433,19 +433,19 @@ namespace helengine::ps3 {
                     }
 
                     // Only queues with real 3D content require a world transform and perspective.
-                    const float viewportAspect = pixelViewport.Z / pixelViewport.W;
+                    const RealEvaluation viewportAspect = pixelViewport.Z / pixelViewport.W;
                     ::float4x4 cameraWorld = cameraEntity->get_WorldTransformMatrix();
-                    CameraPosition[0] = cameraWorld.M41;
-                    CameraPosition[1] = cameraWorld.M42;
-                    CameraPosition[2] = cameraWorld.M43;
+                    CameraPosition[0] = static_cast<float>(cameraWorld.M41);
+                    CameraPosition[1] = static_cast<float>(cameraWorld.M42);
+                    CameraPosition[2] = static_cast<float>(cameraWorld.M43);
                     CameraPosition[3] = 1.0f;
-                    const float fov = camera->get_FieldOfView();
-                    const float nearPlane = camera->get_NearPlaneDistance();
-                    const float farPlane = camera->get_FarPlaneDistance();
-                    if (!std::isfinite(fov) || fov <= 0.0f || fov >= 3.14159265358979323846f ||
-                        !std::isfinite(nearPlane) || !std::isfinite(farPlane) ||
+                    const RealEvaluation fov = camera->get_FieldOfView();
+                    const RealEvaluation nearPlane = camera->get_NearPlaneDistance();
+                    const RealEvaluation farPlane = camera->get_FarPlaneDistance();
+                    if (!RealEvaluation::IsFinite(fov) || fov <= 0.0f || fov >= 3.14159265358979323846f ||
+                        !RealEvaluation::IsFinite(nearPlane) || !RealEvaluation::IsFinite(farPlane) ||
                         nearPlane <= 0.0f || farPlane <= nearPlane ||
-                        !std::isfinite(viewportAspect) || viewportAspect <= 0.0f) {
+                        !RealEvaluation::IsFinite(viewportAspect) || viewportAspect <= 0.0f) {
                         he_cpp_raise(new ::NotSupportedException("PS3 authored camera has invalid perspective parameters."));
                     }
                     // Recover inverse(world) by transposing the public inverse-transpose result.
@@ -615,31 +615,31 @@ namespace helengine::ps3 {
         ::float3 maximum = minimum;
         for (std::uint32_t index = 0; index < vertexCount; ++index) {
             const auto position = (*positions)[static_cast<std::int32_t>(index)];
-            if (!std::isfinite(position.X) || !std::isfinite(position.Y) || !std::isfinite(position.Z)) {
+            if (!RealEvaluation::IsFinite(position.X) || !RealEvaluation::IsFinite(position.Y) || !RealEvaluation::IsFinite(position.Z)) {
                 he_cpp_raise(new ::NotSupportedException("PS3 model contains a nonfinite position."));
             }
             minimum.X = std::min(minimum.X, position.X); maximum.X = std::max(maximum.X, position.X);
             minimum.Y = std::min(minimum.Y, position.Y); maximum.Y = std::max(maximum.Y, position.Y);
             minimum.Z = std::min(minimum.Z, position.Z); maximum.Z = std::max(maximum.Z, position.Z);
-            vertices[index].Position[0] = position.X;
-            vertices[index].Position[1] = position.Y;
-            vertices[index].Position[2] = position.Z;
+            vertices[index].Position[0] = static_cast<float>(position.X);
+            vertices[index].Position[1] = static_cast<float>(position.Y);
+            vertices[index].Position[2] = static_cast<float>(position.Z);
             if (usableNormals) {
                 const auto normal = (*normals)[static_cast<std::int32_t>(index)];
-                const float lengthSquared = normal.X * normal.X + normal.Y * normal.Y + normal.Z * normal.Z;
-                if (!std::isfinite(lengthSquared) || lengthSquared <= 1.0e-12f) usableNormals = false;
+                const RealEvaluation lengthSquared = normal.X * normal.X + normal.Y * normal.Y + normal.Z * normal.Z;
+                if (!RealEvaluation::IsFinite(lengthSquared) || lengthSquared <= 1.0e-12f) usableNormals = false;
                 else {
-                    vertices[index].Normal[0] = normal.X;
-                    vertices[index].Normal[1] = normal.Y;
-                    vertices[index].Normal[2] = normal.Z;
+                    vertices[index].Normal[0] = static_cast<float>(normal.X);
+                    vertices[index].Normal[1] = static_cast<float>(normal.Y);
+                    vertices[index].Normal[2] = static_cast<float>(normal.Z);
                 }
             }
             if (usableTexCoords) {
                 const auto uv = (*texCoords)[static_cast<std::int32_t>(index)];
-                if (!std::isfinite(uv.X) || !std::isfinite(uv.Y)) usableTexCoords = false;
+                if (!RealEvaluation::IsFinite(uv.X) || !RealEvaluation::IsFinite(uv.Y)) usableTexCoords = false;
                 else {
-                    vertices[index].TexCoord[0] = uv.X;
-                    vertices[index].TexCoord[1] = uv.Y;
+                    vertices[index].TexCoord[0] = static_cast<float>(uv.X);
+                    vertices[index].TexCoord[1] = static_cast<float>(uv.Y);
                 }
             }
             // Preserved diagnostic layout only: authored standard VS has no color input.
@@ -676,10 +676,12 @@ namespace helengine::ps3 {
     }
 
     /// Opens P3MT via the renderer-owned source cache and translates native errors at the Core boundary.
-    ::RuntimeMaterial* Ps3RenderManager3D::BuildMaterialFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) {
+    ::RuntimeMaterial* Ps3RenderManager3D::BuildMaterialFromCooked(HeCppString cookedAssetPath, ::IContentStreamSource* contentStreamSource) {
+        if (cookedAssetPath.is_null()) he_cpp_raise(new ::ArgumentNullException("cookedAssetPath"));
+        const std::string nativePath(cookedAssetPath.data(), cookedAssetPath.size());
         if (contentStreamSource == nullptr) he_cpp_raise(new ::ArgumentNullException("contentStreamSource"));
         std::string error;
-        auto* material = Renderer.BuildAuthoredMaterial(cookedAssetPath, *contentStreamSource, error);
+        auto* material = Renderer.BuildAuthoredMaterial(nativePath, *contentStreamSource, error);
         if (material == nullptr) {
             std::printf("PS3_CORE_ERROR stage=BuildMaterialFromCooked path=%s reason=%s\n", cookedAssetPath.c_str(), error.c_str());
             he_cpp_raise(new ::NotSupportedException(error));
@@ -689,8 +691,10 @@ namespace helengine::ps3 {
     }
 
     /// Realizes serialized model geometry and disposes the temporary source arrays after copying.
-    ::RuntimeModel* Ps3RenderManager3D::BuildModelFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) {
-        std::unique_ptr<::Asset> asset(ReadCookedAsset(cookedAssetPath, contentStreamSource, "model"));
+    ::RuntimeModel* Ps3RenderManager3D::BuildModelFromCooked(HeCppString cookedAssetPath, ::IContentStreamSource* contentStreamSource) {
+        if (cookedAssetPath.is_null()) he_cpp_raise(new ::ArgumentNullException("cookedAssetPath"));
+        const std::string nativePath(cookedAssetPath.data(), cookedAssetPath.size());
+        std::unique_ptr<::Asset> asset(ReadCookedAsset(nativePath, contentStreamSource, "model"));
         auto* modelAsset = dynamic_cast<::ModelAsset*>(asset.get());
         if (modelAsset == nullptr) he_cpp_raise(new ::NotSupportedException("PS3 cooked model is not a ModelAsset: " + cookedAssetPath));
         std::unique_ptr<::RuntimeModel> model;

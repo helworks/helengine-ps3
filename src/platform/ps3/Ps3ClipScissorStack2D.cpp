@@ -13,8 +13,8 @@ namespace helengine::ps3 {
     namespace {
         /// Rejects non-finite rectangle values before edge arithmetic or integer conversion.
         void ValidateRect(::float4 rectangle, const char* label, bool requirePositiveSize) {
-            if (!std::isfinite(rectangle.X) || !std::isfinite(rectangle.Y) ||
-                !std::isfinite(rectangle.Z) || !std::isfinite(rectangle.W)) {
+            if (!RealEvaluation::IsFinite(rectangle.X) || !RealEvaluation::IsFinite(rectangle.Y) ||
+                !RealEvaluation::IsFinite(rectangle.Z) || !RealEvaluation::IsFinite(rectangle.W)) {
                 throw std::invalid_argument(std::string("PS3 2D scissor has non-finite ") + label + ".");
             }
             if (rectangle.Z < 0.0f || rectangle.W < 0.0f ||

@@ -57,13 +57,13 @@ namespace helengine::ps3 {
         /// @param cookedAssetPath Content-relative path to the cooked material.
         /// @param contentStreamSource Source the path is resolved against.
         /// @return An owned P3MT material borrowing fully realized cache resources.
-        ::RuntimeMaterial* BuildMaterialFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
+        ::RuntimeMaterial* BuildMaterialFromCooked(HeCppString cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
 
         /// Reads one cooked model from content and realizes it.
         /// @param cookedAssetPath Content-relative path to the cooked model.
         /// @param contentStreamSource Source the path is resolved against.
         /// @return An owned Core model borrowing uploaded geometry retained by the renderer.
-        ::RuntimeModel* BuildModelFromCooked(std::string cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
+        ::RuntimeModel* BuildModelFromCooked(HeCppString cookedAssetPath, ::IContentStreamSource* contentStreamSource) override;
 
         /// Copies indexed positions, normals and UVs and retains source validity.
         /// @param data Raw model asset Core is asking to realize.

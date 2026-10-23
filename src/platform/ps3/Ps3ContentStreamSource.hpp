@@ -29,7 +29,7 @@ namespace helengine::ps3 {
         /// Opens one content-relative asset for reading.
         /// @param assetPath Path relative to the content root.
         /// @return An owned stream, or null when the asset does not exist.
-        ::Stream* OpenRead(std::string assetPath) override;
+        ::Stream* OpenRead(HeCppString assetPath) override;
 
         /// Returns the default content root for an installed PlayStation 3 application.
         static std::string DefaultContentRootPath();

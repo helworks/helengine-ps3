@@ -16,7 +16,7 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
     /// <summary>Name of the optional environment variable selecting the native run duration in seconds.</summary>
     public const string RunSecondsVariable = "HELENGINE_PS3_NATIVE_RUN_SECONDS";
 
-    /// <summary>Name of the optional existing native build id selected for an explicit in-place rebuild.</summary>
+    /// <summary>Name of the optional stable native build directory, created first and verified for later in-place rebuilds.</summary>
     public const string ActiveBuildIdVariable = "HELENGINE_PS3_ACTIVE_BUILD_ID";
 
     /// <summary>Builds a Core-mode executable from the supplied generated Core root.</summary>
@@ -65,7 +65,7 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
         startInfo.ArgumentList.Add(buildScript);
         startInfo.ArgumentList.Add("-BuildId");
         startInfo.ArgumentList.Add(buildId);
-        if (activeBuildId != null) {
+        if (activeBuildId != null && Directory.Exists(Path.Combine(request.OutputRoot, buildId))) {
             startInfo.ArgumentList.Add("-ReuseBuild");
         }
         startInfo.ArgumentList.Add("-Mode");

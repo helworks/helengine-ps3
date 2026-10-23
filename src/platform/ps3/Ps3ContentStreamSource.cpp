@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <sys/stat.h>
 
 namespace helengine::ps3 {
@@ -84,8 +85,9 @@ namespace helengine::ps3 {
         return new ::FileStream(resolved.c_str(), FileMode::Open, FileAccess::Read, FileShare::Read);
     }
 
-    ::Stream* Ps3ContentStreamSource::OpenRead(std::string assetPath) {
-        const std::string resolved = ResolveAssetPath(ContentRootPath, assetPath);
+    ::Stream* Ps3ContentStreamSource::OpenRead(HeCppString assetPath) {
+        if (assetPath.is_null()) throw std::invalid_argument("PS3 content asset path cannot be null.");
+        const std::string resolved = ResolveAssetPath(ContentRootPath, std::string(assetPath.data(), assetPath.size()));
         struct stat status;
         if (stat(resolved.c_str(), &status) != 0) {
             std::printf("PS3_CONTENT_MISSING path=%s\n", resolved.c_str());

@@ -111,8 +111,8 @@ void ValidateAttributes(const Ps3CookedShaderProgram& artifact) {
 
 /// <summary>Checks all six float4 payloads before any vertex can be copied to RSX memory.</summary>
 bool IsFiniteVector(const ::float4& value) {
-    return std::isfinite(value.X) && std::isfinite(value.Y)
-        && std::isfinite(value.Z) && std::isfinite(value.W);
+    return RealEvaluation::IsFinite(value.X) && RealEvaluation::IsFinite(value.Y)
+        && RealEvaluation::IsFinite(value.Z) && RealEvaluation::IsFinite(value.W);
 }
 
 /// <summary>Checks each named shared field without assuming pointer arithmetic across float4 subobjects.</summary>
@@ -185,12 +185,12 @@ void Ps3Batch2DRenderer::SetCamera(const ::float4x4& projection, const ::float4&
     if (!Initialized || Failed || ShutdownComplete || Video.Context() == nullptr || Video.HasDrained()) {
         Fail("camera", "renderer or video is unavailable");
     }
-    const float matrix[16] = { projection.M11, projection.M21, projection.M31, projection.M41,
-        projection.M12, projection.M22, projection.M32, projection.M42,
-        projection.M13, projection.M23, projection.M33, projection.M43,
-        projection.M14, projection.M24, projection.M34, projection.M44 };
+    const float matrix[16] = { static_cast<float>(projection.M11), static_cast<float>(projection.M21), static_cast<float>(projection.M31), static_cast<float>(projection.M41),
+        static_cast<float>(projection.M12), static_cast<float>(projection.M22), static_cast<float>(projection.M32), static_cast<float>(projection.M42),
+        static_cast<float>(projection.M13), static_cast<float>(projection.M23), static_cast<float>(projection.M33), static_cast<float>(projection.M43),
+        static_cast<float>(projection.M14), static_cast<float>(projection.M24), static_cast<float>(projection.M34), static_cast<float>(projection.M44) };
     for (float value : matrix) if (!std::isfinite(value)) Fail("camera", "projection contains a non-finite element");
-    const float viewport[4] = { pixelViewport.X, pixelViewport.Y, pixelViewport.Z, pixelViewport.W };
+    const float viewport[4] = { static_cast<float>(pixelViewport.X), static_cast<float>(pixelViewport.Y), static_cast<float>(pixelViewport.Z), static_cast<float>(pixelViewport.W) };
     for (float value : viewport) {
         if (!std::isfinite(value) || value < 0.0f || value > 65535.0f
             || static_cast<float>(static_cast<std::uint32_t>(value)) != value) {
@@ -292,8 +292,8 @@ void Ps3Batch2DRenderer::Submit(Ps3Batch2DPrograms& programs, ::Batch2DBuffer& b
         const ::float4& opposite = buffer.Vertices->Data[2].Position;
         std::printf("PS3_BATCH2D_LATE_BACKGROUND elapsedSeconds=%lld center=%.3f,%.3f first=%.3f,%.3f opposite=%.3f,%.3f\n",
             static_cast<long long>((sysGetSystemTime() - firstSubmissionMicroseconds) / 1000000),
-            (first.X + opposite.X) * 0.5f, (first.Y + opposite.Y) * 0.5f,
-            first.X, first.Y, opposite.X, opposite.Y);
+            (static_cast<double>(first.X) + static_cast<double>(opposite.X)) * 0.5f, (static_cast<double>(first.Y) + static_cast<double>(opposite.Y)) * 0.5f,
+            static_cast<double>(first.X), static_cast<double>(first.Y), static_cast<double>(opposite.X), static_cast<double>(opposite.Y));
     }
 
     // Report the actual first submitted quad once, after shared geometry expansion.
@@ -304,8 +304,8 @@ void Ps3Batch2DRenderer::Submit(Ps3Batch2DPrograms& programs, ::Batch2DBuffer& b
         for (std::int32_t corner = 0; corner < 4; ++corner) {
             const ::Batch2DVertex& vertex = buffer.Vertices->Data[corner];
             std::printf("PS3_BATCH2D_FIRST_VERTEX corner=%d position=%.3f,%.3f,%.3f,%.3f uv=%.3f,%.3f rgba=%.3f,%.3f,%.3f,%.3f\n",
-                corner, vertex.Position.X, vertex.Position.Y, vertex.Position.Z, vertex.Position.W,
-                vertex.TexLocal.X, vertex.TexLocal.Y, vertex.Color.X, vertex.Color.Y, vertex.Color.Z, vertex.Color.W);
+                corner, static_cast<double>(vertex.Position.X), static_cast<double>(vertex.Position.Y), static_cast<double>(vertex.Position.Z), static_cast<double>(vertex.Position.W),
+                static_cast<double>(vertex.TexLocal.X), static_cast<double>(vertex.TexLocal.Y), static_cast<double>(vertex.Color.X), static_cast<double>(vertex.Color.Y), static_cast<double>(vertex.Color.Z), static_cast<double>(vertex.Color.W));
         }
     }
 
@@ -400,9 +400,9 @@ void Ps3Batch2DRenderer::Submit(Ps3Batch2DPrograms& programs, ::Batch2DBuffer& b
                 const std::int32_t sourceIndex = firstVertex + index;
                 const ::Batch2DVertex& vertex = buffer.Vertices->Data[sourceIndex];
                 std::printf("PS3_BATCH2D_SHADOW_VERTEX ordinal=%d source=%d position=(%.3f,%.3f,%.3f,%.3f) uv=(%.3f,%.3f,%.3f,%.3f) rgba=(%.3f,%.3f,%.3f,%.3f)\n",
-                    index, sourceIndex, vertex.Position.X, vertex.Position.Y, vertex.Position.Z,
-                    vertex.Position.W, vertex.TexLocal.X, vertex.TexLocal.Y, vertex.TexLocal.Z,
-                    vertex.TexLocal.W, vertex.Color.X, vertex.Color.Y, vertex.Color.Z, vertex.Color.W);
+                    index, sourceIndex, static_cast<double>(vertex.Position.X), static_cast<double>(vertex.Position.Y), static_cast<double>(vertex.Position.Z),
+                    static_cast<double>(vertex.Position.W), static_cast<double>(vertex.TexLocal.X), static_cast<double>(vertex.TexLocal.Y), static_cast<double>(vertex.TexLocal.Z),
+                    static_cast<double>(vertex.TexLocal.W), static_cast<double>(vertex.Color.X), static_cast<double>(vertex.Color.Y), static_cast<double>(vertex.Color.Z), static_cast<double>(vertex.Color.W));
             }
             ShadowDiagnosticLogged = true;
             break;
