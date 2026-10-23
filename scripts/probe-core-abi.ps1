@@ -32,6 +32,7 @@ Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+. (Join-Path $repoRoot 'scripts/ps3-sdk-identity.ps1')
 $StateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
 $lockPath = Join-Path $repoRoot 'toolchain-lock.json'
 $timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
@@ -84,6 +85,8 @@ if ($null -eq $lock.ResolvedImage -or [string]::IsNullOrWhiteSpace([string]$lock
     throw 'toolchain-lock.json has no ResolvedImage.ImageId. Run scripts/prepare_toolchain.ps1 first.'
 }
 $imageId = [string]$lock.ResolvedImage.ImageId
+$sdkImageIdentity = Get-Ps3SdkImageIdentity $imageId
+$localImageId = $sdkImageIdentity.LocalImageId
 
 $probeRoot = Join-Path $StateRoot "toolchain\core-abi-$timestamp"
 if (Test-Path -LiteralPath $probeRoot) { throw "Probe directory already exists: $probeRoot" }
@@ -199,7 +202,7 @@ $dockerArgs = @(
     '--mount', "type=bind,source=$probeRoot,target=/probe",
     '--workdir', '/probe',
     '--entrypoint', '/bin/bash',
-    $imageId,
+    $localImageId,
     '-c', "echo $encodedScript | base64 -d | bash -e"
 )
 Write-Output "docker $($dockerArgs -join ' ')"

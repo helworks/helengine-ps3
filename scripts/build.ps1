@@ -45,6 +45,7 @@ Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $repoRoot 'scripts\ps3-paths.ps1')
+. (Join-Path $repoRoot 'scripts/ps3-sdk-identity.ps1')
 $stateRoot = Resolve-Ps3StateRoot -RepoRoot $repoRoot -RequestedRoot $StateRoot
 $outputRootRequest = if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     Join-Path $stateRoot 'builds'
@@ -140,10 +141,8 @@ if ($null -eq $resolved -or -not ($resolved.PSObject.Properties.Name -contains '
     throw 'toolchain-lock.json has no ResolvedImage. Run scripts/prepare_toolchain.ps1 first.'
 }
 $imageId = [string]$resolved.ImageId
-$inspectedId = ((Invoke-CheckedNative 'docker' @('image', 'inspect', $imageId, '--format', '{{.Id}}')) -join '').Trim()
-if ($inspectedId -ne $imageId) {
-    throw "Locked SDK image $imageId is not available locally (docker reported '$inspectedId'). Run scripts/prepare_toolchain.ps1."
-}
+$sdkImageIdentity = Get-Ps3SdkImageIdentity $imageId
+$localImageId = $sdkImageIdentity.LocalImageId
 $shaderToolkit = $lock.ShaderToolkit
 $cgMountSource = Join-Path $stateRoot 'dependencies\cg\usr'
 $cgLibraryPath = Join-Path $cgMountSource ($shaderToolkit.LibraryPath -replace '/', '\')
@@ -259,7 +258,7 @@ if ($Mode -eq 'Core') {
 $dockerArgs += @(
     '--workdir', '/out',
     '--entrypoint', '/bin/bash',
-    $imageId,
+    $localImageId,
     '-c', $innerCommand
 )
 $commandText = "docker $($dockerArgs -join ' ')"
@@ -292,7 +291,7 @@ $readelfArgs = @(
     'run', '--rm', '--network', 'none',
     '--mount', "type=bind,source=$buildRoot,target=/out,readonly",
     '--entrypoint', [string]$resolved.ReadelfPath,
-    $imageId, '-h', '/out/helengine_ps3.elf'
+    $localImageId, '-h', '/out/helengine_ps3.elf'
 )
 $readelfOutput = Invoke-CheckedNative 'docker' $readelfArgs
 $readelfText = $readelfOutput -join [Environment]::NewLine
@@ -405,6 +404,9 @@ $manifest = [PSCustomObject]@{
     GeneratedCoreSha256 = $generatedCoreFingerprint
     GeneratedCoreFileCount = $generatedCoreFileCount
     ImageId = $imageId
+    LocalImageId = $localImageId
+    ImageManifestSha256 = $sdkImageIdentity.ManifestSha256
+    ImageConfigSha256 = $sdkImageIdentity.ConfigSha256
     LaunchArtifact = $launchArtifactName
     Artifacts = $artifactRecords
 }
