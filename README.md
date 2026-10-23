@@ -32,6 +32,26 @@ The setup script downloads and verifies the proprietary NVIDIA Cg 3.1 archive in
 `.ps3\dependencies\cg`, extracts its `usr\` tree, and builds the pinned Docker image.
 All generated toolchain state stays under `.ps3`.
 
+### Imported SDK images on macOS
+
+Docker's classic image store can address an imported OCI image by its config digest
+instead of the manifest digest pinned in `toolchain-lock.json`. Do not edit the lock.
+Set `HELENGINE_PS3_SDK_IDENTITY_ROOT` to an absolute external directory containing
+the original raw `manifest.json` and `config.json` from the pinned image's OCI archive.
+The build, ABI probe and shader compiler verify the manifest hash, config hash and
+size, linux/amd64 platform, and ordered filesystem DiffIDs against Docker inspection.
+Invalid proof or Docker errors fail the build. The verified local ID is used only to
+execute Docker; cache identities and the build manifest's `ImageId` retain the pin.
+Native receipts also record `LocalImageId`, `ImageManifestSha256` and `ImageConfigSha256`.
+
+For example, on macOS:
+
+```powershell
+$env:HELENGINE_PS3_SDK_IDENTITY_ROOT = '/tmp/helengine/ps3/sdk-identity'
+```
+
+Without this variable, the existing strict canonical image lookup is unchanged.
+
 ## Build
 
 ```powershell
