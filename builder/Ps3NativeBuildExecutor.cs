@@ -19,6 +19,9 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
     /// <summary>Name of the optional stable native build directory, created first and verified for later in-place rebuilds.</summary>
     public const string ActiveBuildIdVariable = "HELENGINE_PS3_ACTIVE_BUILD_ID";
 
+    /// <summary>Names an optional external SDK/Cg state root forwarded to the native script.</summary>
+    public const string StateRootVariable = "HELENGINE_PS3_STATE_ROOT";
+
     /// <summary>Builds a Core-mode executable from the supplied generated Core root.</summary>
     /// <param name="request">Complete platform request.</param>
     /// <param name="generatedCoreRoot">Root of the generated Core C++ tree.</param>
@@ -76,6 +79,7 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
         startInfo.ArgumentList.Add(Path.GetFullPath(generatedCoreRoot));
         startInfo.ArgumentList.Add("-ContentRoot");
         startInfo.ArgumentList.Add(Path.GetFullPath(contentRoot));
+        AppendStateRootArgument(startInfo, Environment.GetEnvironmentVariable(StateRootVariable));
         AppendRunDurationArgument(startInfo, Environment.GetEnvironmentVariable(RunSecondsVariable));
 
         using Process process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
@@ -102,11 +106,18 @@ public sealed class Ps3NativeBuildExecutor : IPs3NativeBuildExecutor {
         }
     }
 
+    /// <summary>Forwards an explicit SDK state root without changing repository-local defaults.</summary>
+    internal static void AppendStateRootArgument(ProcessStartInfo startInfo, string configuredValue) {
+        ArgumentNullException.ThrowIfNull(startInfo);
+        if (string.IsNullOrEmpty(configuredValue)) return;
+        if (!Path.IsPathFullyQualified(configuredValue)) {
+            throw new InvalidOperationException($"{StateRootVariable} must be an absolute directory path.");
+        }
+        startInfo.ArgumentList.Add("-StateRoot");
+        startInfo.ArgumentList.Add(Path.GetFullPath(configuredValue));
+    }
+
     /// <summary>Appends the optional validated native run duration as two process argument tokens.</summary>
-    /// <param name="startInfo">Process start description to extend.</param>
-    /// <param name="configuredValue">Optional unsigned decimal duration in seconds.</param>
-    /// <exception cref="ArgumentNullException">Thrown when the process start description is missing.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when the configured duration is not from zero through 3600 seconds.</exception>
     internal static void AppendRunDurationArgument(ProcessStartInfo startInfo, string configuredValue) {
         ArgumentNullException.ThrowIfNull(startInfo);
         if (string.IsNullOrEmpty(configuredValue)) {

@@ -51,6 +51,9 @@ $env:HELENGINE_PS3_SDK_IDENTITY_ROOT = '/tmp/helengine/ps3/sdk-identity'
 ```
 
 Without this variable, the existing strict canonical image lookup is unchanged.
+For builds launched through the shared CLI, `HELENGINE_PS3_STATE_ROOT` forwards
+the native script's existing `-StateRoot` option, including its `dependencies/cg/usr`
+directory. It must be an absolute path; omitting it keeps the repository-local default.
 
 ## Build
 
