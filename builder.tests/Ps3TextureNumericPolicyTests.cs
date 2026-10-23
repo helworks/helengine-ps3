@@ -11,8 +11,8 @@ namespace helengine.ps3.builder.tests;
 
 /// <summary>Verifies target numeric policies survive PS3 texture cooking and real builder staging independently of authoring precision.</summary>
 public sealed class Ps3TextureNumericPolicyTests : IDisposable {
-    /// <summary>Fixed platform-local fixture tree overwritten for every test rather than retained as build history.</summary>
-    readonly string Root = Path.Combine(OperatingSystem.IsWindows() ? "C:\\temp" : "/tmp", "helengine", "ps3", "texture-policy-tests");
+    /// <summary>Fixed physical temporary root avoids macOS's /tmp alias while preserving production's filesystem-link guard.</summary>
+    readonly string Root = Path.Combine(OperatingSystem.IsWindows() ? "C:\\temp" : OperatingSystem.IsMacOS() ? "/private/tmp" : "/tmp", "helengine", "ps3", "texture-policy-tests");
 
     /// <summary>Independent source texels whose exact RGBA bytes must survive authoring decode and cooking.</summary>
     readonly byte[] Pixels = [11, 22, 33, 255, 44, 55, 66, 255];
