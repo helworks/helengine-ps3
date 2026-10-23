@@ -322,7 +322,7 @@ if (-not [string]::IsNullOrWhiteSpace($ContentRoot)) {
     }
     $contentDestination = Join-Path $buildRoot 'USRDIR\content'
     New-Item -ItemType Directory -Path $contentDestination -Force | Out-Null
-    $contentPrefix = $ContentRoot.TrimEnd('\', '/') + '\'
+    $contentPrefix = $ContentRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     foreach ($contentFile in (Get-ChildItem -LiteralPath $ContentRoot -Recurse -File)) {
         $relative = $contentFile.FullName.Substring($contentPrefix.Length)
         $destinationPath = Join-Path $contentDestination $relative
@@ -359,7 +359,7 @@ if ($Mode -eq 'Core') {
     # Relative paths are computed by trimming the root prefix rather than with
     # [IO.Path]::GetRelativePath, which does not exist on the .NET Framework that Windows
     # PowerShell 5.1 runs on.
-    $generatedRootPrefix = $GeneratedCoreRoot.TrimEnd('\', '/') + '\'
+    $generatedRootPrefix = $GeneratedCoreRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $generatedLines = @(
         foreach ($generatedFile in $generatedFiles) {
             $fullPath = $generatedFile.FullName
