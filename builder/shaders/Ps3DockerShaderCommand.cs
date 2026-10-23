@@ -42,6 +42,8 @@ public sealed class Ps3DockerShaderCommand {
             WorkingDirectory = JobDirectory
         };
         Add(startInfo, "run");
+        Add(startInfo, "--platform");
+        Add(startInfo, "linux/amd64");
         Add(startInfo, "--pull=never");
         Add(startInfo, "--rm");
         Add(startInfo, "--name");
@@ -54,7 +56,7 @@ public sealed class Ps3DockerShaderCommand {
         Add(startInfo, $"type=bind,source={JobDirectory},target=/work");
         Add(startInfo, "--env");
         Add(startInfo, $"LD_LIBRARY_PATH={Toolchain.CgLibraryDirectory}");
-        Add(startInfo, Toolchain.ImageId);
+        Add(startInfo, Toolchain.LocalImageId);
         Add(startInfo, Toolchain.CompilerPath);
         Add(startInfo, Stage == ShaderStage.Vertex ? "-v" : "-f");
         Add(startInfo, "-d");

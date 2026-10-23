@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace helengine.ps3.builder;
 
@@ -12,8 +13,11 @@ public sealed class Ps3ShaderToolchain {
     /// <param name="compilerPath">Locked cgcomp executable path inside the Docker image.</param>
     /// <param name="cgLibraryDirectory">Locked Cg library directory inside the image.</param>
     /// <param name="identity">Stable identity formed from image, compiler and Cg library digest.</param>
-    Ps3ShaderToolchain(string imageId, string cgMountSource, string cgMountTarget, string compilerPath, string cgLibraryDirectory, string identity) {
+    /// <param name="sdkImageIdentity">Optional validated local execution identity whose canonical pin remains unchanged.</param>
+    Ps3ShaderToolchain(string imageId, string cgMountSource, string cgMountTarget, string compilerPath, string cgLibraryDirectory, string identity, Ps3SdkImageIdentity sdkImageIdentity) {
         ImageId = imageId;
+        LocalImageId = sdkImageIdentity?.LocalImageId ?? imageId;
+        SdkImageIdentity = sdkImageIdentity;
         CgMountSource = cgMountSource;
         CgMountTarget = cgMountTarget;
         CompilerPath = compilerPath;
@@ -23,6 +27,12 @@ public sealed class Ps3ShaderToolchain {
 
     /// <summary>Gets the content-addressed Docker image ID from toolchain-lock.json.</summary>
     public string ImageId { get; }
+
+    /// <summary>Gets the verified local execution ID; without an external proof it remains the canonical locked ID.</summary>
+    public string LocalImageId { get; }
+
+    /// <summary>Gets the verified external raw-proof identities, or null when legacy lock-only loading is selected.</summary>
+    public Ps3SdkImageIdentity SdkImageIdentity { get; }
 
     /// <summary>Gets the resolved host path mounted read-only for cgcomp's Cg shared library.</summary>
     public string CgMountSource { get; }
@@ -43,6 +53,15 @@ public sealed class Ps3ShaderToolchain {
     /// <param name="repositoryRoot">Explicit repository root containing toolchain-lock.json.</param>
     /// <returns>A validated immutable toolchain configuration.</returns>
     public static Ps3ShaderToolchain Load(string repositoryRoot) {
+        return Load(repositoryRoot, Environment.GetEnvironmentVariable(Ps3SdkImageIdentity.IdentityRootVariable));
+    }
+
+    /// <summary>Loads a canonical toolchain with an explicit optional external proof and Docker inspection adapter.</summary>
+    /// <param name="repositoryRoot">Repository containing the unchanged tracked toolchain lock.</param>
+    /// <param name="identityRoot">Absolute raw-proof root; null or empty preserves offline legacy behavior.</param>
+    /// <param name="inspectImage">Optional local Docker inspection adapter used only when a proof root is supplied.</param>
+    /// <returns>A toolchain whose cache identity stays canonical and whose execution ID is independently verified.</returns>
+    public static Ps3ShaderToolchain Load(string repositoryRoot, string identityRoot, Func<string, JsonObject> inspectImage = null) {
         if (string.IsNullOrWhiteSpace(repositoryRoot)) throw new ArgumentException("Repository root must be provided.", nameof(repositoryRoot));
         string fullRepositoryRoot = Path.GetFullPath(repositoryRoot);
         string lockPath = Path.Combine(fullRepositoryRoot, "toolchain-lock.json");
@@ -79,7 +98,13 @@ public sealed class Ps3ShaderToolchain {
 
         string containerLibraryDirectory = GetContainerDirectory(mountTarget, libraryPath);
         string identity = $"{imageId}|{compilerPath}|{actualDigest}";
-        return new Ps3ShaderToolchain(imageId, cgMountSource, mountTarget, compilerPath, containerLibraryDirectory, identity);
+        Ps3SdkImageIdentity sdkImageIdentity = null;
+        if (!string.IsNullOrWhiteSpace(identityRoot)) {
+            string lockedTag = root.TryGetProperty("ResolvedImage", out JsonElement resolved) &&
+                resolved.TryGetProperty("Tag", out JsonElement tag) && tag.ValueKind == JsonValueKind.String ? tag.GetString() : null;
+            sdkImageIdentity = Ps3SdkImageIdentity.Resolve(imageId, lockedTag, identityRoot, inspectImage);
+        }
+        return new Ps3ShaderToolchain(imageId, cgMountSource, mountTarget, compilerPath, containerLibraryDirectory, identity, sdkImageIdentity);
     }
 
     /// <summary>Reads one required nonempty string from a nested toolchain-lock.json object.</summary>
