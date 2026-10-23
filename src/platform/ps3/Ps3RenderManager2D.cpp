@@ -62,10 +62,10 @@ namespace helengine::ps3 {
         }
 
         /// Converts a finite nonnegative boundary into a checked integer pixel edge.
-        int32_t PixelEdge(double value) {
-            const double rounded = std::ceil(value - 0.5);
-            if (!std::isfinite(rounded) || rounded < 0.0 ||
-                rounded > static_cast<double>(std::numeric_limits<int32_t>::max())) {
+        int32_t PixelEdge(::RealEvaluation value) {
+            const ::RealEvaluation rounded = ::RealMath::Ceiling(value - 0.5);
+            if (!::RealEvaluation::IsFinite(rounded) || rounded < 0 ||
+                static_cast<double>(rounded) > static_cast<double>(std::numeric_limits<int32_t>::max())) {
                 throw std::runtime_error("PS3 2D camera viewport edge is outside supported integer pixels");
             }
             return static_cast<int32_t>(rounded);
@@ -74,16 +74,16 @@ namespace helengine::ps3 {
         /// Resolves normalized/pixel Core values and applies the shared pixel-center edge convention.
         ::float4 ResolvePixelViewport(::float4 requested, unsigned width, unsigned height) {
             const ::float4 resolved = ::CameraViewportResolver::ResolveViewport(
-                requested, static_cast<double>(width), static_cast<double>(height));
-            if (!std::isfinite(resolved.X) || !std::isfinite(resolved.Y) ||
-                !std::isfinite(resolved.Z) || !std::isfinite(resolved.W) ||
+                requested, ::RealEvaluation(width), ::RealEvaluation(height));
+            if (!::RealEvaluation::IsFinite(resolved.X) || !::RealEvaluation::IsFinite(resolved.Y) ||
+                !::RealEvaluation::IsFinite(resolved.Z) || !::RealEvaluation::IsFinite(resolved.W) ||
                 resolved.X < 0.0f || resolved.Y < 0.0f || resolved.Z <= 0.0f || resolved.W <= 0.0f) {
                 throw std::runtime_error("PS3 2D camera viewport must be finite and positive");
             }
             const int32_t left = PixelEdge(resolved.X);
             const int32_t top = PixelEdge(resolved.Y);
-            const int32_t right = PixelEdge(static_cast<double>(resolved.X) + resolved.Z);
-            const int32_t bottom = PixelEdge(static_cast<double>(resolved.Y) + resolved.W);
+            const int32_t right = PixelEdge(resolved.X + resolved.Z);
+            const int32_t bottom = PixelEdge(resolved.Y + resolved.W);
             if (right <= left || bottom <= top ||
                 static_cast<uint64_t>(right) > width || static_cast<uint64_t>(bottom) > height) {
                 throw std::runtime_error("PS3 2D camera viewport extends outside the backbuffer");
@@ -276,12 +276,14 @@ namespace helengine::ps3 {
     }
 
     /// Loads a real cooked RGBA texture into the Raster-owned registry.
-    ::RuntimeTexture* Ps3RenderManager2D::BuildTextureFromCooked(std::string cookedAssetPath,
+    ::RuntimeTexture* Ps3RenderManager2D::BuildTextureFromCooked(::HeCppString cookedAssetPath,
         ::IContentStreamSource* contentStreamSource) {
         if (contentStreamSource == nullptr) throw new ArgumentNullException("contentStreamSource");
+        if (cookedAssetPath == nullptr) throw new ArgumentNullException("cookedAssetPath");
         if (cookedAssetPath.empty()) throw new ArgumentException("Cooked texture asset path is required.", "cookedAssetPath");
-        ::RuntimeTexture* texture = Raster.Batch2DResources().BuildCooked(*contentStreamSource, cookedAssetPath);
-        SceneDiagnostics.LogCookedTexture(texture, cookedAssetPath);
+        const std::string path(cookedAssetPath.data(), cookedAssetPath.size());
+        ::RuntimeTexture* texture = Raster.Batch2DResources().BuildCooked(*contentStreamSource, path);
+        SceneDiagnostics.LogCookedTexture(texture, path);
         NoteFirstUse("texture-build", LoggedTextureBuild);
         return texture;
     }

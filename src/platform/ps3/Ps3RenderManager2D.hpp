@@ -141,7 +141,7 @@ public:
     /// @param cookedAssetPath Canonical source-relative cooked asset path.
     /// @param contentStreamSource Required source used to resolve the path.
     /// @return Core-owned wrapper for the Raster-owned GPU texture.
-    ::RuntimeTexture* BuildTextureFromCooked(std::string cookedAssetPath,
+    ::RuntimeTexture* BuildTextureFromCooked(::HeCppString cookedAssetPath,
         ::IContentStreamSource* contentStreamSource) override;
 
     /// Copies and uploads a raw Core texture asset through Raster's texture registry.
