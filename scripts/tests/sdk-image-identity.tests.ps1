@@ -20,6 +20,22 @@ $configId = 'sha256:' + (Get-FileHash $configPath -Algorithm SHA256).Hash.ToLowe
 $manifestPath = Write-JsonBytes 'manifest.json' @{schemaVersion=2; mediaType='application/vnd.oci.image.manifest.v1+json'; config=@{mediaType='application/vnd.oci.image.config.v1+json';digest=$configId;size=(Get-Item $configPath).Length};layers=@(@{digest=$layerA},@{digest=$layerB})}
 $pin = 'sha256:' + (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $proof = Read-Ps3SdkImageProof $pin $FixtureRoot
+$originalManifest = [IO.File]::ReadAllBytes($manifestPath)
+$manifestObject = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+$manifestObject.config.size = [string]$manifestObject.config.size
+Write-JsonBytes 'manifest.json' $manifestObject | Out-Null
+$stringSizePin = 'sha256:' + (Get-FileHash $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+Must-Fail { Read-Ps3SdkImageProof $stringSizePin $FixtureRoot }
+[IO.File]::WriteAllBytes($manifestPath,$originalManifest)
+$script:inspectCount = 0
+function Invoke-CheckedNative {
+    param($FilePath,$ArgumentList)
+    $script:inspectCount++
+    throw 'Docker failed to read image metadata: content blob not found'
+}
+try { Get-Ps3SdkImageIdentity $pin $FixtureRoot | Out-Null; throw 'Daemon error was ignored.' }
+catch { if ($_.Exception.Message -ne 'Docker failed to read image metadata: content blob not found') { throw } }
+if ($script:inspectCount -ne 1) { throw 'Daemon error triggered an image fallback.' }
 foreach ($actualId in @($pin,$configId)) {
     $actual = [pscustomobject]@{Id=$actualId;Os='linux';Architecture='amd64';RootFS=@{Type='layers';Layers=@($layerA,$layerB)}}
     $result = Resolve-Ps3SdkImageIdentity $pin $proof $actual

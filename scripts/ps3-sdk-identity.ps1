@@ -15,9 +15,9 @@ function Read-Ps3SdkImageProof {
     } finally { $sha.Dispose() }
     if ($manifestDigest -cne $CanonicalImageId) { throw 'SDK manifest bytes do not match the locked digest.' }
     $manifest = [Text.UTF8Encoding]::new($false,$true).GetString($manifestBytes) | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 2 -or $manifest.mediaType -cnotin @('application/vnd.oci.image.manifest.v1+json','application/vnd.docker.distribution.manifest.v2+json')) { throw 'Unsupported SDK image manifest.' }
+    if (($manifest.schemaVersion -isnot [int] -and $manifest.schemaVersion -isnot [long]) -or $manifest.schemaVersion -ne 2 -or $manifest.mediaType -cnotin @('application/vnd.oci.image.manifest.v1+json','application/vnd.docker.distribution.manifest.v2+json')) { throw 'Unsupported SDK image manifest.' }
     if ($manifest.config.mediaType -cnotin @('application/vnd.oci.image.config.v1+json','application/vnd.docker.container.image.v1+json')) { throw 'Unsupported SDK config media type.' }
-    if ($configDigest -cne $manifest.config.digest -or $configBytes.LongLength -ne $manifest.config.size) { throw 'SDK config bytes do not match the manifest descriptor.' }
+    if (($manifest.config.size -isnot [int] -and $manifest.config.size -isnot [long]) -or $configDigest -cne $manifest.config.digest -or $configBytes.LongLength -ne $manifest.config.size) { throw 'SDK config bytes do not match the manifest descriptor.' }
     $config = [Text.UTF8Encoding]::new($false,$true).GetString($configBytes) | ConvertFrom-Json
     if ($config.os -cne 'linux' -or $config.architecture -cne 'amd64' -or $config.rootfs.type -cne 'layers') { throw 'SDK config is not a linux/amd64 layered image.' }
     $layers = @($config.rootfs.diff_ids)
@@ -54,7 +54,7 @@ function Get-Ps3SdkImageIdentity {
             $metadata = ((Invoke-CheckedNative 'docker' @('image','inspect',$candidate)) -join [Environment]::NewLine) | ConvertFrom-Json
             break
         } catch {
-            if ($_.Exception.Message -notmatch '(?i)(No such image|image.*not found)') { throw }
+            if ($_.Exception.Message -notmatch '(?i)No such image:') { throw }
         }
     }
     if ($null -eq $metadata) { throw 'Neither the verified SDK config nor its canonical manifest is installed locally.' }
