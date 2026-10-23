@@ -588,7 +588,7 @@ public sealed class Ps3ShaderArtifactCookerTests {
         string platform = "ps3",
         string graphicsProfile = "ps3-standard",
         string cookRootPath = null) =>
-        new(cookRootPath ?? Path.Combine(GetFixtureRoot(), Guid.NewGuid().ToString("N"), "cook"), platform, "release", graphicsProfile, dependencies, sources);
+        new(cookRootPath ?? Path.Combine(GetFixtureRoot(), Guid.NewGuid().ToString("N"), "cook"), platform, "release", graphicsProfile, dependencies, sources, helengine.NumericPrecisionPolicy.Default);
 
     /// <summary>Converts an absolute fixture path into a Windows path form that is not fully qualified but resolves identically.</summary>
     /// <param name="pathKind">Requested relative, drive-relative or root-relative form.</param>

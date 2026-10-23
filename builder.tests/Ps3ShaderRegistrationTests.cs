@@ -69,7 +69,7 @@ public sealed class Ps3ShaderRegistrationTests {
             "release",
             "ps3-standard",
             [dependency],
-            [source]);
+            [source], helengine.NumericPrecisionPolicy.Default);
 
         PlatformShaderArtifactCookResult result = Assert.IsAssignableFrom<IPlatformShaderArtifactBuilder>((object)builder).CookShaderArtifacts(request);
 

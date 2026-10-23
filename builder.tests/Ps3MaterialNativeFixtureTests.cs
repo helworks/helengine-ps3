@@ -79,7 +79,7 @@ public sealed class Ps3MaterialNativeFixtureTests {
             "release",
             Ps3MaterialSchemaIds.StandardGraphicsProfileId,
             [shaderDependency],
-            [shaderSourceSnapshot]);
+            [shaderSourceSnapshot], helengine.NumericPrecisionPolicy.Default);
         PlatformShaderArtifactCookResult shaderResult = CookShaderArtifacts(shaderRequest);
         PlatformCookedArtifactDeclaration shaderArtifact = Assert.Single(shaderResult.CookedArtifactDeclarations);
         Assert.Equal(identity.RuntimeRelativePath, shaderArtifact.RelativePath);

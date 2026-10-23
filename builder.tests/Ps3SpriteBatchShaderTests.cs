@@ -32,7 +32,7 @@ public sealed class Ps3SpriteBatchShaderTests {
             "release",
             "ps3-standard",
             [dependency],
-            [source]);
+            [source], helengine.NumericPrecisionPolicy.Default);
         Ps3ShaderCookBackendStub backend = new();
         Ps3ShaderArtifactCooker cooker = new(_ => backend);
 
@@ -67,7 +67,7 @@ public sealed class Ps3SpriteBatchShaderTests {
             "release",
             "ps3-standard",
             [new PlatformShaderDependency("SpriteBatchShader", "SpriteBatchShader.vs", "SpriteBatchShader.ps", variantName)],
-            [new PlatformShaderArtifactCookSource("SpriteBatchShader", "sprite-batch-source", "snapshot source", sourcePath)]);
+            [new PlatformShaderArtifactCookSource("SpriteBatchShader", "sprite-batch-source", "snapshot source", sourcePath)], helengine.NumericPrecisionPolicy.Default);
         int factoryCalls = 0;
         Ps3ShaderArtifactCooker cooker = new(_ => {
             factoryCalls++;
@@ -107,7 +107,7 @@ public sealed class Ps3SpriteBatchShaderTests {
             "ps3-standard",
             SpriteBatchShaderVariants.All.Select(variant => new PlatformShaderDependency(
                 "SpriteBatchShader", "SpriteBatchShader.vs", "SpriteBatchShader.ps", variant.Name)).ToArray(),
-            [new PlatformShaderArtifactCookSource("SpriteBatchShader", sourceHash, sourceText, sourcePath)]);
+            [new PlatformShaderArtifactCookSource("SpriteBatchShader", sourceHash, sourceText, sourcePath)], helengine.NumericPrecisionPolicy.Default);
 
         PlatformShaderArtifactCookResult result = new Ps3ShaderArtifactCooker().Cook(request);
 

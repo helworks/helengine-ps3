@@ -103,7 +103,7 @@ public sealed class Ps3RendererShaderDependencyTests {
                 "release",
                 "ps3-standard",
                 builder.RendererShaderDependencies,
-                [new PlatformShaderArtifactCookSource("SpriteBatchShader", sourceHashes[cookIndex], sourceTexts[cookIndex], copiedSourcePath)]);
+                [new PlatformShaderArtifactCookSource("SpriteBatchShader", sourceHashes[cookIndex], sourceTexts[cookIndex], copiedSourcePath)], helengine.NumericPrecisionPolicy.Default);
             PlatformShaderArtifactCookResult result = builder.CookShaderArtifacts(request);
 
             Assert.Equal(new[] { "Textured", "RoundedShape" }, result.CookedArtifactDeclarations.Select(declaration => declaration.VariantId));
