@@ -38,7 +38,8 @@ if ([string]::IsNullOrWhiteSpace($BuilderAssemblyPath)) {
 } else {
     # Windows PowerShell 5/.NET Framework may not provide IsPathFullyQualified.
     # Reject drive-relative and root-relative paths instead of resolving them via cwd.
-    if ($BuilderAssemblyPath -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/])') {
+    $isPosixAbsolute = [IO.Path]::DirectorySeparatorChar -eq '/' -and $BuilderAssemblyPath.StartsWith('/')
+    if (-not $isPosixAbsolute -and $BuilderAssemblyPath -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/])') {
         throw 'BuilderAssemblyPath must be fully qualified.'
     }
     $builderAssembly = [IO.Path]::GetFullPath($BuilderAssemblyPath)
