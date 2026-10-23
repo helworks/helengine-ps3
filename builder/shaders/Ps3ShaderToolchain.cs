@@ -53,17 +53,26 @@ public sealed class Ps3ShaderToolchain {
     /// <param name="repositoryRoot">Explicit repository root containing toolchain-lock.json.</param>
     /// <returns>A validated immutable toolchain configuration.</returns>
     public static Ps3ShaderToolchain Load(string repositoryRoot) {
-        return Load(repositoryRoot, Environment.GetEnvironmentVariable(Ps3SdkImageIdentity.IdentityRootVariable));
+        return Load(repositoryRoot, Environment.GetEnvironmentVariable(Ps3SdkImageIdentity.IdentityRootVariable),
+            stateRoot: Environment.GetEnvironmentVariable(Ps3NativeBuildExecutor.StateRootVariable));
     }
 
     /// <summary>Loads a canonical toolchain with an explicit optional external proof and Docker inspection adapter.</summary>
     /// <param name="repositoryRoot">Repository containing the unchanged tracked toolchain lock.</param>
     /// <param name="identityRoot">Absolute raw-proof root; null or empty preserves offline legacy behavior.</param>
     /// <param name="inspectImage">Optional local Docker inspection adapter used only when a proof root is supplied.</param>
+    /// <param name="stateRoot">Optional absolute SDK state directory replacing the repository's .ps3 directory.</param>
     /// <returns>A toolchain whose cache identity stays canonical and whose execution ID is independently verified.</returns>
-    public static Ps3ShaderToolchain Load(string repositoryRoot, string identityRoot, Func<string, JsonObject> inspectImage = null) {
+    public static Ps3ShaderToolchain Load(string repositoryRoot, string identityRoot, Func<string, JsonObject> inspectImage = null, string stateRoot = null) {
         if (string.IsNullOrWhiteSpace(repositoryRoot)) throw new ArgumentException("Repository root must be provided.", nameof(repositoryRoot));
         string fullRepositoryRoot = Path.GetFullPath(repositoryRoot);
+        string fullStateRoot = null;
+        if (!string.IsNullOrEmpty(stateRoot)) {
+            if (!Path.IsPathFullyQualified(stateRoot)) {
+                throw new ArgumentException($"{Ps3NativeBuildExecutor.StateRootVariable} must be an absolute directory path.", nameof(stateRoot));
+            }
+            fullStateRoot = Path.GetFullPath(stateRoot);
+        }
         string lockPath = Path.Combine(fullRepositoryRoot, "toolchain-lock.json");
         if (!File.Exists(lockPath)) throw new FileNotFoundException("Pinned PS3 toolchain lock was not found.", lockPath);
 
@@ -83,6 +92,13 @@ public sealed class Ps3ShaderToolchain {
         if (Path.IsPathRooted(mountSourceRelative)) throw new InvalidDataException("Locked Cg mount source must be relative to the repository root.");
         string cgMountSource = Path.GetFullPath(Path.Combine(fullRepositoryRoot, mountSourceRelative));
         EnsureContained(fullRepositoryRoot, cgMountSource, "Locked Cg mount source escapes the repository root.");
+        if (fullStateRoot != null) {
+            string defaultStateRoot = Path.Combine(fullRepositoryRoot, ".ps3");
+            EnsureContained(defaultStateRoot, cgMountSource, "Locked Cg mount source escapes the repository's .ps3 state directory.");
+            string relativeStatePath = Path.GetRelativePath(defaultStateRoot, cgMountSource);
+            cgMountSource = Path.GetFullPath(Path.Combine(fullStateRoot, relativeStatePath));
+            EnsureContained(fullStateRoot, cgMountSource, "Locked Cg mount source escapes the configured state root.");
+        }
         if (!Directory.Exists(cgMountSource)) throw new DirectoryNotFoundException($"Locked Cg mount source does not exist: {cgMountSource}");
 
         string libraryRelative = libraryPath.Replace('/', Path.DirectorySeparatorChar);
