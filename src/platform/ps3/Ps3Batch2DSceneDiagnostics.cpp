@@ -51,8 +51,8 @@ void Ps3Batch2DSceneDiagnostics::BeginPass(std::uint32_t pass, const ::float4& v
         "PS3_SCENE_INPUT_PASS_BEGIN pass=%u viewport=%.9g,%.9g,%.9g,%.9g "
         "scissor=%.9g,%.9g,%.9g,%.9g visited_sprite=0 visited_text=0 "
         "visited_rounded_rect=0 batch_draw_count=%llu\n",
-        PassIndex, viewport.X, viewport.Y, viewport.Z, viewport.W,
-        scissor.X, scissor.Y, scissor.Z, scissor.W,
+        PassIndex, static_cast<double>(viewport.X), static_cast<double>(viewport.Y), static_cast<double>(viewport.Z), static_cast<double>(viewport.W),
+        static_cast<double>(scissor.X), static_cast<double>(scissor.Y), static_cast<double>(scissor.Z), static_cast<double>(scissor.W),
         static_cast<unsigned long long>(InitialBatchDrawCount));
 }
 
@@ -72,8 +72,8 @@ void Ps3Batch2DSceneDiagnostics::EndPass(bool completed, std::uint64_t batchDraw
         "drawable_records=%llu truncated=%u batch_draw_count=%llu "
         "batch_draw_delta=%llu batch_draw_delta_valid=%u\n",
         PassIndex, completed ? 1u : 0u,
-        PassViewport.X, PassViewport.Y, PassViewport.Z, PassViewport.W,
-        PassScissor.X, PassScissor.Y, PassScissor.Z, PassScissor.W,
+        static_cast<double>(PassViewport.X), static_cast<double>(PassViewport.Y), static_cast<double>(PassViewport.Z), static_cast<double>(PassViewport.W),
+        static_cast<double>(PassScissor.X), static_cast<double>(PassScissor.Y), static_cast<double>(PassScissor.Z), static_cast<double>(PassScissor.W),
         static_cast<unsigned long long>(Sequence),
         static_cast<unsigned long long>(SpriteCount),
         static_cast<unsigned long long>(TextCount),
@@ -132,10 +132,10 @@ void Ps3Batch2DSceneDiagnostics::WriteCommonFields(const char* categoryName,
         std::printf(
             " parent_position=%.9g,%.9g,%.9g parent_scale=%.9g,%.9g,%.9g "
             "parent_orientation=%.9g,%.9g,%.9g,%.9g",
-            position.X, position.Y, position.Z, scale.X, scale.Y, scale.Z,
-            orientation.X, orientation.Y, orientation.Z, orientation.W);
+            static_cast<double>(position.X), static_cast<double>(position.Y), static_cast<double>(position.Z), static_cast<double>(scale.X), static_cast<double>(scale.Y), static_cast<double>(scale.Z),
+            static_cast<double>(orientation.X), static_cast<double>(orientation.Y), static_cast<double>(orientation.Z), static_cast<double>(orientation.W));
     }
-    std::printf(" scissor=%.9g,%.9g,%.9g,%.9g", scissor.X, scissor.Y, scissor.Z, scissor.W);
+    std::printf(" scissor=%.9g,%.9g,%.9g,%.9g", static_cast<double>(scissor.X), static_cast<double>(scissor.Y), static_cast<double>(scissor.Z), static_cast<double>(scissor.W));
 }
 
 /// Writes a byte range as lowercase hexadecimal, preserving embedded zeroes and newlines.
@@ -151,7 +151,7 @@ void Ps3Batch2DSceneDiagnostics::LogGlyphMetrics(std::uint64_t sequence,
     bool seen[256] = {};
     const std::size_t scanLength = std::min(text.size(), MaximumTextBytes);
     std::uint32_t glyphCount = 0;
-    ::Dictionary<char, ::FontChar>* characters = font == nullptr ? nullptr : font->get_Characters();
+    ::Dictionary<char16_t, ::FontChar>* characters = font == nullptr ? nullptr : font->get_Characters();
 
     for (std::size_t index = 0; index < scanLength; ++index) {
         const unsigned char byte = static_cast<unsigned char>(text[index]);
@@ -159,7 +159,7 @@ void Ps3Batch2DSceneDiagnostics::LogGlyphMetrics(std::uint64_t sequence,
         seen[byte] = true;
         ++glyphCount;
 
-        const char key = static_cast<char>(byte);
+        const char16_t key = static_cast<char16_t>(byte);
         ::FontChar glyph;
         const bool found = characters != nullptr && characters->TryGetValue(key, glyph);
         if (!found) {
@@ -181,8 +181,8 @@ void Ps3Batch2DSceneDiagnostics::LogGlyphMetrics(std::uint64_t sequence,
             PassIndex, static_cast<unsigned long long>(sequence),
             static_cast<unsigned>(byte), static_cast<unsigned>(byte),
             const_cast<void*>(static_cast<const void*>(font)),
-            glyph.SourceRect.X, glyph.SourceRect.Y, glyph.SourceRect.Z, glyph.SourceRect.W,
-            glyph.OffsetY, glyph.AdvanceWidth, glyph.BearingX, glyph.BearingY);
+            static_cast<double>(glyph.SourceRect.X), static_cast<double>(glyph.SourceRect.Y), static_cast<double>(glyph.SourceRect.Z), static_cast<double>(glyph.SourceRect.W),
+            static_cast<double>(glyph.OffsetY), static_cast<double>(glyph.AdvanceWidth), static_cast<double>(glyph.BearingX), static_cast<double>(glyph.BearingY));
     }
 
     std::printf(
@@ -212,7 +212,7 @@ void Ps3Batch2DSceneDiagnostics::LogSprite(::ISpriteDrawable2D* sprite,
     }
     std::printf(
         " size=%d,%d source_rect=%.9g,%.9g,%.9g,%.9g color_rgba=%u,%u,%u,%u\n",
-        size.X, size.Y, sourceRect.X, sourceRect.Y, sourceRect.Z, sourceRect.W,
+        size.X, size.Y, static_cast<double>(sourceRect.X), static_cast<double>(sourceRect.Y), static_cast<double>(sourceRect.Z), static_cast<double>(sourceRect.W),
         static_cast<unsigned>(color.X), static_cast<unsigned>(color.Y),
         static_cast<unsigned>(color.Z), static_cast<unsigned>(color.W));
 }
@@ -225,7 +225,8 @@ void Ps3Batch2DSceneDiagnostics::LogText(::ITextDrawable2D* textDrawable,
     std::uint64_t sequence = 0;
     if (!BeginDrawable(Category::Text, "text", parent, scissor, sequence)) return;
 
-    const std::string& text = textDrawable->get_Text();
+    const auto managedText = textDrawable->get_Text();
+    const std::string text(managedText.data(), managedText.size());
     const std::size_t loggedBytes = std::min(text.size(), MaximumTextBytes);
     const ::int2 size = textDrawable->get_Size();
     const ::float4 sourceRect = textDrawable->get_SourceRect();
@@ -246,22 +247,22 @@ void Ps3Batch2DSceneDiagnostics::LogText(::ITextDrawable2D* textDrawable,
         "wrap_text=%u color_rgba=%u,%u,%u,%u outline_scale=%.9g outline_color_rgba=%u,%u,%u,%u "
         "shadow_offset=%.9g,%.9g shadow_color_rgba=%u,%u,%u,%u font=%p "
         "font_source_texture_asset=%p",
-        size.X, size.Y, sourceRect.X, sourceRect.Y, sourceRect.Z, sourceRect.W,
-        textDrawable->get_FontScale(), static_cast<unsigned>(textDrawable->get_Alignment()),
+        size.X, size.Y, static_cast<double>(sourceRect.X), static_cast<double>(sourceRect.Y), static_cast<double>(sourceRect.Z), static_cast<double>(sourceRect.W),
+        static_cast<double>(textDrawable->get_FontScale()), static_cast<unsigned>(textDrawable->get_Alignment()),
         textDrawable->get_WrapText() ? 1u : 0u,
         static_cast<unsigned>(color.X), static_cast<unsigned>(color.Y),
         static_cast<unsigned>(color.Z), static_cast<unsigned>(color.W),
-        textDrawable->get_OutlineScale(),
+        static_cast<double>(textDrawable->get_OutlineScale()),
         static_cast<unsigned>(outlineColor.X), static_cast<unsigned>(outlineColor.Y),
         static_cast<unsigned>(outlineColor.Z), static_cast<unsigned>(outlineColor.W),
-        shadowOffset.X, shadowOffset.Y,
+        static_cast<double>(shadowOffset.X), static_cast<double>(shadowOffset.Y),
         static_cast<unsigned>(shadowColor.X), static_cast<unsigned>(shadowColor.Y),
         static_cast<unsigned>(shadowColor.Z), static_cast<unsigned>(shadowColor.W),
         const_cast<void*>(static_cast<const void*>(font)),
         const_cast<void*>(static_cast<const void*>(font == nullptr ? nullptr : font->get_SourceTextureAsset())));
     if (font != nullptr) {
         std::printf(" font_atlas_width=%d font_atlas_height=%d line_height=%.9g",
-            font->get_AtlasWidth(), font->get_AtlasHeight(), font->get_LineHeight());
+            font->get_AtlasWidth(), font->get_AtlasHeight(), static_cast<double>(font->get_LineHeight()));
     } else {
         std::printf(" font_atlas_width=unavailable font_atlas_height=unavailable line_height=unavailable");
     }
@@ -292,7 +293,7 @@ void Ps3Batch2DSceneDiagnostics::LogRoundedRect(::IRoundedRectDrawable2D* shape,
         " size=%d,%d radius=%.9g border_thickness=%.9g corners=%u "
         "fill_rgba=%u,%u,%u,%u border_rgba=%u,%u,%u,%u color_rgba=%u,%u,%u,%u "
         "source_rect=%.9g,%.9g,%.9g,%.9g rotation=%.9g\n",
-        size.X, size.Y, shape->get_Radius(), shape->get_BorderThickness(),
+        size.X, size.Y, static_cast<double>(shape->get_Radius()), static_cast<double>(shape->get_BorderThickness()),
         static_cast<unsigned>(shape->get_Corners()),
         static_cast<unsigned>(fillColor.X), static_cast<unsigned>(fillColor.Y),
         static_cast<unsigned>(fillColor.Z), static_cast<unsigned>(fillColor.W),
@@ -300,7 +301,7 @@ void Ps3Batch2DSceneDiagnostics::LogRoundedRect(::IRoundedRectDrawable2D* shape,
         static_cast<unsigned>(borderColor.Z), static_cast<unsigned>(borderColor.W),
         static_cast<unsigned>(color.X), static_cast<unsigned>(color.Y),
         static_cast<unsigned>(color.Z), static_cast<unsigned>(color.W),
-        sourceRect.X, sourceRect.Y, sourceRect.Z, sourceRect.W, shape->get_Rotation());
+        static_cast<double>(sourceRect.X), static_cast<double>(sourceRect.Y), static_cast<double>(sourceRect.Z), static_cast<double>(sourceRect.W), static_cast<double>(shape->get_Rotation()));
 }
 
 /// Records a cooked wrapper/path association only after texture construction succeeded.
